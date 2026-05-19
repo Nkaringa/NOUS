@@ -1,0 +1,48 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# env & secrets — NEVER commit
+.env
+.env.local
+.env*.local
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Supabase
+supabase/.temp/
+supabase/.branches/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# logs
+*.log
+npm-debug.log*
+
+# staging (skill output when backend unreachable)
+data/staging/
+
+# personal source notes — not part of the codebase
+Reference-Notes/
+data/notes-raw.md
+
+# design mockups — superseded by the implemented UI
+mockups/
+
+# testing
+coverage/
+.nyc_output/

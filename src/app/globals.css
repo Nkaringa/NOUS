@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surfaces */
+  --color-bg: #fafaf8;
+  --color-bg-input: #ffffff;
+  --color-bg-soft: #f3f1ec;
+
+  /* Text */
+  --color-ink: #1a1a1a;
+  --color-ink-mid: #6b6b6b;
+  --color-ink-soft: #a8a8a8;
+
+  /* Lines */
+  --color-hairline: #e8e6e0;
+  --color-hairline-strong: #d4d1c8;
+
+  /* Accent */
+  --color-red: #c1281c;
+  --color-red-deep: #8a1a12;
+  --color-red-bg: #f8e5e3;
+
+  /* Status (light variants) */
+  --color-ok-bg: #e8f0e6;
+  --color-ok-ink: #2d6a2d;
+  --color-warn-bg: #fbeed7;
+  --color-warn-ink: #8b6500;
+
+  /* Fonts — next/font sets the *-loaded variables on <html>; we wrap them
+     with system fallbacks so font-sans / font-serif / font-mono Tailwind
+     utilities resolve correctly even before fonts swap in. */
+  --font-sans: var(--font-sans-loaded), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: var(--font-serif-loaded), Georgia, Cambria, "Times New Roman", serif;
+  --font-mono: var(--font-mono-loaded), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--color-red-bg);
+  color: var(--color-red-deep);
+}
