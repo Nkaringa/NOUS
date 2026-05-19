@@ -96,20 +96,24 @@ export async function hybridSearch(args: {
   return out;
 }
 
-// Tunable. Empirically text-embedding-3-small reports ~0.7+ for
-// paraphrases, ~0.4-0.6 for genuinely related topics, < 0.3 for noise.
-const MIN_VEC_SIMILARITY = 0.3;
+// Tunable. Empirically text-embedding-3-small reports ~0.7+ for paraphrases,
+// ~0.4-0.6 for genuinely related topics, < 0.3 for noise. Slightly stricter
+// (0.35) than the previous batch-level threshold (0.3) because this now
+// gates each note individually rather than the whole batch.
+const MIN_VEC_SIMILARITY = 0.35;
 
 /**
- * Decide whether the retrieved set actually contains anything relevant to
- * the question. True if either:
- *   - any FTS keyword match (high precision signal), OR
- *   - top vector similarity meets the threshold.
+ * Filter retrieved notes to only those individually relevant. A note passes
+ * if it had any FTS keyword match OR its vector similarity meets the
+ * threshold. The result is used for BOTH the displayed "Retrieved sources"
+ * row AND the LLM context — keeping the model's view consistent with the
+ * user's view.
+ *
+ * If the returned list is empty, the caller should treat this as a
+ * "no relevant notes" case (banner + general-knowledge answer).
  */
-export function hasRelevantHits(notes: RetrievedNote[]): boolean {
-  if (notes.length === 0) return false;
-  const anyFts = notes.some((n) => n.fts_rank > 0);
-  if (anyFts) return true;
-  const topVec = Math.max(...notes.map((n) => n.vec_similarity));
-  return topVec >= MIN_VEC_SIMILARITY;
+export function filterRelevantNotes(notes: RetrievedNote[]): RetrievedNote[] {
+  return notes.filter(
+    (n) => n.fts_rank > 0 || n.vec_similarity >= MIN_VEC_SIMILARITY,
+  );
 }

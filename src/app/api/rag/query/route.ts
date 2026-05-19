@@ -13,7 +13,7 @@
 
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { hybridSearch, hasRelevantHits } from "@/lib/rag/retrieve";
+import { hybridSearch, filterRelevantNotes } from "@/lib/rag/retrieve";
 import {
   ragAnswerSystemPrompt,
   ragAnswerNoNotesSystemPrompt,
@@ -79,9 +79,14 @@ export async function POST(request: NextRequest) {
     content_md: question,
   });
 
-  // --- Hybrid retrieve top 8 ---
+  // --- Hybrid retrieve top 8, then filter per-note for relevance ---
+  // The retriever always returns up to K candidates by RRF score, but many
+  // may have weak/no signal individually. We filter so the displayed sources
+  // and the LLM context only include notes that actually pass a relevance
+  // bar (FTS keyword match OR vec similarity >= threshold).
   const retrieved = await hybridSearch({ supabase, query: question, k: 8 });
-  const relevant = hasRelevantHits(retrieved);
+  const relevantNotes = filterRelevantNotes(retrieved);
+  const relevant = relevantNotes.length > 0;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -92,16 +97,15 @@ export async function POST(request: NextRequest) {
       try {
         emit({ type: "session", session_id: sessionId, new: isNewSession });
 
-        // Only surface notes when they were actually relevant — otherwise
-        // showing 8 unrelated chips is misleading.
-        const citedNotes = relevant
-          ? retrieved.map((n) => ({
-              id: n.id,
-              heading: n.heading,
-              domain: n.domain,
-              sub_category: n.sub_category,
-            }))
-          : [];
+        // Display only the notes that passed per-note relevance filtering,
+        // not the full top-K from the retriever. This matches what the LLM
+        // actually sees in its context.
+        const citedNotes = relevantNotes.map((n) => ({
+          id: n.id,
+          heading: n.heading,
+          domain: n.domain,
+          sub_category: n.sub_category,
+        }));
         emit({ type: "notes", notes: citedNotes });
 
         const mode: "no_notes" | null = relevant ? null : "no_notes";
@@ -120,14 +124,14 @@ export async function POST(request: NextRequest) {
             },
           });
         } else {
-          const context = retrieved
+          const context = relevantNotes
             .map(
               (n, i) =>
                 `[${i + 1}] note_id: ${n.id}\nHeading: ${n.heading}\nDomain: ${n.domain} / ${n.sub_category}\nDefinition: ${n.definition_md}\nExample: ${n.example_md ?? "(none)"}`,
             )
             .join("\n\n---\n\n");
 
-          const userPrompt = `NOTES:\n${context}\n\nQUESTION: ${question}\n\nAnswer using ONLY the notes above. Cite using the full note_id, e.g. [^${retrieved[0]?.id}]. Begin your answer now:`;
+          const userPrompt = `NOTES:\n${context}\n\nQUESTION: ${question}\n\nAnswer using ONLY the notes above. Cite using the full note_id, e.g. [^${relevantNotes[0]?.id}]. Begin your answer now:`;
 
           await streamAnswer({
             system: ragAnswerSystemPrompt(),
