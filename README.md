@@ -88,6 +88,26 @@ Usage:
 ```
 Claude reads the headings, runs the categorizer + definer prompts in-session, and POSTs the structured items to `/api/ingest/cc-session`. Server-side: normalize taxonomy → embed → insert. ~80% cheaper than the web flow per heading.
 
+### Optional: invoke the skill from any directory (targeting PROD)
+
+By default the skill reads its config from the project `.env` and is only auto-discovered when Claude Code is opened in this repo. To use it against your **deployed** instance from any project on your laptop:
+
+1. **Install at user-scope** so it's discoverable everywhere:
+   ```bash
+   cp -r .claude/skills/nous-ingest ~/.claude/skills/nous-ingest
+   ```
+2. **Create a user-scope config** pointing at prod:
+   ```bash
+   mkdir -p ~/.nous && chmod 700 ~/.nous
+   cat > ~/.nous/env <<EOF
+   NOUS_API_URL=https://<your-deployed-url>
+   NOUS_INGEST_TOKEN=<prod bearer token from Vercel env vars>
+   EOF
+   chmod 600 ~/.nous/env
+   ```
+
+The skill's config lookup chain is: `~/.nous/env` (preferred) → project `./.env` → shell env → ask. So local `npm run dev` continues to use the project `.env` (DEV); the skill invoked from elsewhere uses `~/.nous/env` (PROD).
+
 ---
 
 ## Project structure
