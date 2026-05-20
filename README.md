@@ -99,14 +99,14 @@ By default the skill reads its config from the project `.env` and is only auto-d
 2. **Create a user-scope config** pointing at prod:
    ```bash
    mkdir -p ~/.nous && chmod 700 ~/.nous
-   cat > ~/.nous/env <<EOF
+   cat > ~/.nous/.env <<EOF
    NOUS_API_URL=https://<your-deployed-url>
    NOUS_INGEST_TOKEN=<prod bearer token from Vercel env vars>
    EOF
-   chmod 600 ~/.nous/env
+   chmod 600 ~/.nous/.env
    ```
 
-The skill's config lookup chain is: `~/.nous/env` (preferred) → project `./.env` → shell env → ask. So local `npm run dev` continues to use the project `.env` (DEV); the skill invoked from elsewhere uses `~/.nous/env` (PROD).
+The skill's config lookup chain is: `~/.nous/.env` (preferred) → project `./.env` → shell env → ask. So local `npm run dev` continues to use the project `.env` (DEV); the skill invoked from elsewhere uses `~/.nous/.env` (PROD).
 
 ---
 

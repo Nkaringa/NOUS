@@ -110,18 +110,18 @@ Content-Type: application/json
 
 Look these up **in this priority order**, taking the first one that has the variable defined:
 
-1. **`~/.nous/env`** — user-scope config. **Preferred when targeting PROD from any directory.**
+1. **`~/.nous/.env`** — user-scope config. **Preferred when targeting PROD from any directory.**
 2. **`./.env`** (the project `.env` in the current working directory) — typical for **local DEV** when the session is opened inside the NOUS repo.
 3. **Shell environment** — if the user has already `export`ed them in the current shell.
-4. **Ask the user** — if none of the above resolve. Offer to persist what they provide to `~/.nous/env`.
+4. **Ask the user** — if none of the above resolve. Offer to persist what they provide to `~/.nous/.env`.
 
-Expected `~/.nous/env` format (chmod 600):
+Expected `~/.nous/.env` format (chmod 600):
 ```
 NOUS_API_URL=https://nous.karinga.dev
 NOUS_INGEST_TOKEN=<64-hex prod token>
 ```
 
-**Critical:** The DEV token will fail against PROD (and vice versa). Always confirm with the user which environment they're targeting before posting, especially if `~/.nous/env` is present (likely PROD) but they invoked the skill from the project directory (likely meaning DEV).
+**Critical:** The DEV token will fail against PROD (and vice versa). Always confirm with the user which environment they're targeting before posting, especially if `~/.nous/.env` is present (likely PROD) but they invoked the skill from the project directory (likely meaning DEV).
 
 Server response: `{ inserted: number, ids: string[], taxonomy_changes: [...] }`.
 
@@ -160,8 +160,8 @@ For batches > 5 items, show a one-line preview per item:
 
 ## Pre-flight checks (run before any LLM work)
 
-1. **Resolve config** — walk the `~/.nous/env` → `./.env` → shell env → ask chain (see *Path A* above). Confirm `NOUS_API_URL` + `NOUS_INGEST_TOKEN` are both set before continuing.
-2. **Confirm target environment** with the user when ambiguous — e.g., if `~/.nous/env` points to PROD but `./.env` also exists pointing to DEV. A one-line "ingesting to PROD (`https://nous.karinga.dev`) — confirm?" is enough.
+1. **Resolve config** — walk the `~/.nous/.env` → `./.env` → shell env → ask chain (see *Path A* above). Confirm `NOUS_API_URL` + `NOUS_INGEST_TOKEN` are both set before continuing.
+2. **Confirm target environment** with the user when ambiguous — e.g., if `~/.nous/.env` points to PROD but `./.env` also exists pointing to DEV. A one-line "ingesting to PROD (`https://nous.karinga.dev`) — confirm?" is enough.
 3. **Read prompts** — if a project `.claude/CLAUDE.md` exists in the CWD, read Part C for the canonical CATEGORIZER and DEFINER prompts. If not (skill invoked outside the repo), the prompts below in this file's *Processing pipeline* section describe the contract; follow those.
 4. **Fetch taxonomy** via `GET {NOUS_API_URL}/api/taxonomy` to seed the categorizer. Empty `{}` is fine if the call fails.
 5. **Confirm batch size** — if parsing > 20 items, ask the user to confirm before proceeding. Token cost and wall time scale linearly.
