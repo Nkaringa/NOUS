@@ -1,15 +1,5 @@
-// POST /api/rag/query — hybrid RAG answer with streaming citations and
-// chat session persistence.
-//
-// Body: { question: string, session_id?: string }
-// Auth: Supabase session cookie.
-//
-// Stream events (NDJSON):
-//   {"type":"session","session_id":"...","new":true|false}
-//   {"type":"notes","notes":[{id,heading,domain,sub_category},...]}
-//   {"type":"delta","text":"..."}     (many)
-//   {"type":"done","message_id":"..."}
-//   {"type":"error","error":"..."}    (terminal on failure)
+// POST /api/rag/query — hybrid RAG answer with streaming citations,
+// workspace-scoped, with chat session persistence.
 
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -20,6 +10,8 @@ import {
 } from "@/lib/llm/prompts";
 import { getAnthropic, ANTHROPIC_MODEL } from "@/lib/llm/anthropic";
 import { getOpenAI, OPENAI_MODEL } from "@/lib/llm/openai";
+import { ragQueryBody } from "@/lib/zod-schemas";
+import { resolveWorkspaceId } from "@/lib/workspaces/active";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -31,35 +23,49 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let body: { question?: string; session_id?: string };
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "invalid json" }, { status: 400 });
   }
-  const question = (body.question ?? "").trim();
+
+  const parsed = ragQueryBody.safeParse(body);
+  if (!parsed.success) {
+    return Response.json({ error: "validation", details: parsed.error.flatten() }, { status: 422 });
+  }
+  const question = parsed.data.question.trim();
   if (!question) {
     return Response.json({ error: "no question" }, { status: 422 });
   }
-  const requestedSessionId = body.session_id ?? null;
+  const requestedSessionId = parsed.data.session_id ?? null;
 
-  // --- Session resolution ---
+  const workspaceId = await resolveWorkspaceId({
+    supabase,
+    userId: user.id,
+    explicit: parsed.data.workspace_id ?? null,
+  });
+  if (!workspaceId) {
+    return Response.json({ error: "no workspace available" }, { status: 403 });
+  }
+
+  // Session resolution: only accept session_id if it belongs to this workspace.
   let sessionId = requestedSessionId;
   let isNewSession = false;
   if (sessionId) {
     const { data: existing } = await supabase
       .from("chat_sessions")
-      .select("id")
+      .select("id, workspace_id")
       .eq("id", sessionId)
       .maybeSingle();
-    if (!existing) sessionId = null;
+    if (!existing || existing.workspace_id !== workspaceId) sessionId = null;
   }
   if (!sessionId) {
     const title =
       question.length > 80 ? question.slice(0, 77) + "..." : question;
     const { data: newSession, error } = await supabase
       .from("chat_sessions")
-      .insert({ user_id: user.id, title })
+      .insert({ user_id: user.id, workspace_id: workspaceId, title })
       .select("id")
       .single();
     if (error || !newSession) {
@@ -72,19 +78,13 @@ export async function POST(request: NextRequest) {
     isNewSession = true;
   }
 
-  // --- Persist the user's message immediately ---
   await supabase.from("chat_messages").insert({
     session_id: sessionId,
     role: "user",
     content_md: question,
   });
 
-  // --- Hybrid retrieve top 8, then filter per-note for relevance ---
-  // The retriever always returns up to K candidates by RRF score, but many
-  // may have weak/no signal individually. We filter so the displayed sources
-  // and the LLM context only include notes that actually pass a relevance
-  // bar (FTS keyword match OR vec similarity >= threshold).
-  const retrieved = await hybridSearch({ supabase, query: question, k: 8 });
+  const retrieved = await hybridSearch({ supabase, workspaceId, query: question, k: 8 });
   const relevantNotes = filterRelevantNotes(retrieved);
   const relevant = relevantNotes.length > 0;
 
@@ -95,11 +95,8 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
 
       try {
-        emit({ type: "session", session_id: sessionId, new: isNewSession });
+        emit({ type: "session", session_id: sessionId, new: isNewSession, workspace_id: workspaceId });
 
-        // Display only the notes that passed per-note relevance filtering,
-        // not the full top-K from the retriever. This matches what the LLM
-        // actually sees in its context.
         const citedNotes = relevantNotes.map((n) => ({
           id: n.id,
           heading: n.heading,
@@ -114,7 +111,6 @@ export async function POST(request: NextRequest) {
         let assistantText = "";
 
         if (!relevant) {
-          // No matching notes — answer from general knowledge.
           await streamAnswer({
             system: ragAnswerNoNotesSystemPrompt(),
             user: question,
@@ -143,7 +139,6 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        // Persist the assistant's complete message + citations + mode.
         const { data: msgRow } = await supabase
           .from("chat_messages")
           .insert({

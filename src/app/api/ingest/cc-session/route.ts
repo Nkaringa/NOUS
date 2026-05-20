@@ -1,10 +1,9 @@
 // POST /api/ingest/cc-session — Claude Code session ingest.
-// Auth: bearer NOUS_INGEST_TOKEN (NOT cookie). Bypassed by middleware matcher.
+// Auth: bearer NOUS_INGEST_TOKEN (no cookie — middleware matcher skips this path).
 //
-// Caller has ALREADY run CATEGORIZER_PROMPT and DEFINER_PROMPT in-session
-// (no API calls). This route validates the items, normalizes taxonomy,
-// generates embeddings, and inserts using the service-role client on
-// behalf of NOUS_INGEST_USER_ID.
+// Body REQUIRES `workspace_id`. The skill prompts the user before posting:
+// "Personal or which workspace?". We validate that NOUS_INGEST_USER_ID is a
+// member of that workspace before any insert.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -50,26 +49,41 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const { workspace_id: workspaceId, items } = parsed.data;
   const supabase = createServiceClient();
-  const snapshot = await fetchTaxonomySnapshot(supabase, userId);
+
+  // Validate that NOUS_INGEST_USER_ID is a member of the target workspace.
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!membership) {
+    return NextResponse.json(
+      { error: "NOUS_INGEST_USER_ID is not a member of the target workspace" },
+      { status: 403 },
+    );
+  }
+
+  const snapshot = await fetchTaxonomySnapshot(supabase, workspaceId);
   const insertedIds: string[] = [];
   const errors: string[] = [];
 
-  for (const item of parsed.data.items) {
+  for (const item of items) {
     try {
-      // Normalize taxonomy against snapshot.
       const norm = await normalizeTaxonomyPair({
         proposed: { domain: item.domain, sub_category: item.sub_category },
         snapshot,
       });
 
-      // Embed (Claude in-session cannot produce vectors).
       const embedding = await embedText(`${item.heading}\n\n${item.definition_md}`);
 
       const { data: row, error: insertErr } = await supabase
         .from("notes")
         .insert({
           user_id: userId,
+          workspace_id: workspaceId,
           heading: item.heading,
           body_md: item.body_md ?? null,
           definition_md: item.definition_md,
@@ -89,11 +103,10 @@ export async function POST(request: NextRequest) {
 
       insertedIds.push(row.id);
       await bumpTaxonomy(supabase, {
-        userId,
+        workspaceId,
         domain: norm.canonical.domain,
         sub_category: norm.canonical.sub_category,
       });
-      // Reflect new taxonomy entry in live snapshot.
       if (!snapshot.find(
         (e) => e.domain === norm.canonical.domain && e.sub_category === norm.canonical.sub_category,
       )) {
@@ -110,9 +123,10 @@ export async function POST(request: NextRequest) {
 
   await supabase.from("ingest_log").insert({
     user_id: userId,
+    workspace_id: workspaceId,
     mode: "cc-session",
     model: "claude-in-session",
-    raw_input: JSON.stringify(parsed.data.items.map((i) => i.heading)),
+    raw_input: JSON.stringify(items.map((i) => i.heading)),
     parsed_count: insertedIds.length,
     status: errors.length === 0 ? "success" : insertedIds.length > 0 ? "partial" : "failed",
     error: errors.length > 0 ? errors.join("\n") : null,
@@ -121,6 +135,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     inserted: insertedIds.length,
     ids: insertedIds,
+    workspace_id: workspaceId,
     errors: errors.length > 0 ? errors : undefined,
   });
 }

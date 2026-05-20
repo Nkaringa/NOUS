@@ -1,22 +1,18 @@
 // POST /api/ingest — bulk ingestion with NDJSON streaming + live ingest_log.
 // Auth: Supabase session cookie.
 //
-// Supports chunked submission via optional `log_id` + `is_last_chunk`:
-//   - First call without log_id: creates a new ingest_log row (legacy behavior).
-//   - Subsequent calls with log_id: reuse that row, accumulate parsed_count
-//     and errors. Final status only set when `is_last_chunk` is true.
+// Workspace: pulled from body (`workspace_id`) → cookie → user default,
+// in that priority.
 //
-// Stream events (NDJSON):
-//   {"type":"start","total":N,"parsed":[...],"log_id":"..."}
-//   {"type":"item","index":i,"total":N,"ok":true,"note":{...}}
-//   {"type":"item","index":i,"total":N,"ok":false,"heading":"...","error":"..."}
-//   {"type":"done","succeeded":S,"failed":F,"status":"...","log_id":"..."}
+// Chunking: optional `log_id` reuses an existing log row across chunks;
+// `is_last_chunk` controls when the final status flips.
 
 import type { NextRequest } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { ingestBulkBody } from "@/lib/zod-schemas";
 import { parseHeadings } from "@/lib/ingest/parse";
 import { ingestBatch } from "@/lib/ingest/pipeline";
+import { resolveWorkspaceId } from "@/lib/workspaces/active";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -45,10 +41,13 @@ export async function POST(request: NextRequest) {
   let mode: "ui" | "bulk" = "bulk";
   let logId: string | null = null;
   let isLastChunk = true;
+  let explicitWorkspaceId: string | null = null;
 
   if (typeof (body as { text?: unknown }).text === "string") {
     items = parseHeadings((body as { text: string }).text);
     mode = "bulk";
+    const t = body as { workspace_id?: unknown };
+    if (typeof t.workspace_id === "string") explicitWorkspaceId = t.workspace_id;
   } else {
     const parsed = ingestBulkBody.safeParse(body);
     if (!parsed.success) {
@@ -64,6 +63,7 @@ export async function POST(request: NextRequest) {
     mode = parsed.data.mode;
     logId = parsed.data.log_id ?? null;
     isLastChunk = parsed.data.is_last_chunk ?? true;
+    explicitWorkspaceId = parsed.data.workspace_id ?? null;
   }
 
   if (items.length === 0) {
@@ -73,20 +73,31 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const workspaceId = await resolveWorkspaceId({
+    supabase,
+    userId: user.id,
+    explicit: explicitWorkspaceId,
+  });
+  if (!workspaceId) {
+    return new Response(
+      JSON.stringify({ error: "no workspace available — explicit workspace_id is not a workspace you have access to" }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   const svc = createServiceClient();
 
-  // Resolve the log row: reuse if log_id provided & matches user; else create new.
   let cumulativeStart = 0;
   let existingErrorBlock = "";
   if (logId) {
     const { data: existing } = await svc
       .from("ingest_log")
-      .select("user_id, parsed_count, error")
+      .select("user_id, workspace_id, parsed_count, error")
       .eq("id", logId)
       .maybeSingle();
-    if (!existing || existing.user_id !== user.id) {
+    if (!existing || existing.user_id !== user.id || existing.workspace_id !== workspaceId) {
       return new Response(
-        JSON.stringify({ error: "invalid log_id" }),
+        JSON.stringify({ error: "invalid log_id (not yours or different workspace)" }),
         { status: 403, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -100,6 +111,7 @@ export async function POST(request: NextRequest) {
       .from("ingest_log")
       .insert({
         user_id: user.id,
+        workspace_id: workspaceId,
         mode,
         model: "pending",
         raw_input: rawInput,
@@ -123,6 +135,7 @@ export async function POST(request: NextRequest) {
           total: items.length,
           parsed: items.map((it) => it.heading),
           log_id: logId,
+          workspace_id: workspaceId,
         });
 
         let chunkSucceeded = 0;
@@ -131,6 +144,7 @@ export async function POST(request: NextRequest) {
         const { results, modelsUsed } = await ingestBatch({
           supabase,
           userId: user.id,
+          workspaceId,
           items,
           source: mode,
           onProgress: async ({ index, total, result }) => {
@@ -177,8 +191,6 @@ export async function POST(request: NextRequest) {
               : "failed";
 
         if (logId) {
-          // Only set the final status on the last chunk; intermediate chunks
-          // leave the row as 'partial' so /activity reflects in-progress.
           const updatePayload: Record<string, unknown> = {
             parsed_count: totalSucceededSoFar,
             error: combinedErr || null,
