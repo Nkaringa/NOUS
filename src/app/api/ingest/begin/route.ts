@@ -1,16 +1,12 @@
 // POST /api/ingest/begin — start a chunked bulk submission.
-// Creates one ingest_log row (status=partial, model=pending, parsed_count=0)
-// with the full raw_input recorded up front. Returns { log_id } that the
-// client passes to subsequent POST /api/ingest calls for each chunk.
-//
-// Used by IngestForm when the parsed heading count exceeds the chunk size
-// (currently 2), to bypass Vercel Hobby's 60s function timeout by splitting
-// one logical submission into N independent function invocations that all
-// update the same log row.
+// Creates one ingest_log row scoped to the active workspace; returns the
+// log_id which subsequent /api/ingest chunks share via the `log_id` body
+// param.
 
 import type { NextRequest } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { ingestBeginBody } from "@/lib/zod-schemas";
+import { resolveWorkspaceId } from "@/lib/workspaces/active";
 
 export const runtime = "nodejs";
 
@@ -36,6 +32,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const workspaceId = await resolveWorkspaceId({
+    supabase,
+    userId: user.id,
+    explicit: parsed.data.workspace_id ?? null,
+  });
+  if (!workspaceId) {
+    return Response.json({ error: "no workspace available" }, { status: 403 });
+  }
+
   const { all_headings, mode } = parsed.data;
   const rawInput = all_headings.map((h, i) => `${i + 1}. ${h}`).join("\n");
 
@@ -44,6 +49,7 @@ export async function POST(request: NextRequest) {
     .from("ingest_log")
     .insert({
       user_id: user.id,
+      workspace_id: workspaceId,
       mode,
       model: "pending",
       raw_input: rawInput,
@@ -60,5 +66,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return Response.json({ log_id: row.id, total: all_headings.length });
+  return Response.json({
+    log_id: row.id,
+    total: all_headings.length,
+    workspace_id: workspaceId,
+  });
 }

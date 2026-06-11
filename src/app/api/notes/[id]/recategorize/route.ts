@@ -1,4 +1,5 @@
-// POST /api/notes/[id]/recategorize — re-run categorizer + normalizer.
+// POST /api/notes/[id]/recategorize — re-run categorizer + normalizer for one note.
+// Workspace is determined by the note itself (each note belongs to one workspace).
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -25,13 +26,14 @@ export async function POST(
 
   const { data: note, error: fetchErr } = await supabase
     .from("notes")
-    .select("id, heading, body_md, domain, sub_category")
+    .select("id, heading, body_md, domain, sub_category, workspace_id")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
   if (!note) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const snapshot = await fetchTaxonomySnapshot(supabase, user.id);
+  const workspaceId = note.workspace_id as string;
+  const snapshot = await fetchTaxonomySnapshot(supabase, workspaceId);
 
   try {
     const { data: cat, model } = await withJsonSchema({
@@ -63,10 +65,11 @@ export async function POST(
     const old = { domain: note.domain, sub_category: note.sub_category };
 
     await supabase.from("notes").update({ domain, sub_category }).eq("id", id);
-    await bumpTaxonomy(supabase, { userId: user.id, domain, sub_category });
+    await bumpTaxonomy(supabase, { workspaceId, domain, sub_category });
 
     await supabase.from("ingest_log").insert({
       user_id: user.id,
+      workspace_id: workspaceId,
       mode: "recategorize",
       model,
       raw_input: note.heading,

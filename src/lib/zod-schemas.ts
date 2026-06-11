@@ -26,13 +26,14 @@ export const taxonomyNormalizerSchema = z.object({
 
 // API request validators.
 
+// workspace_id is optional in cookie-authed routes (falls back to active
+// workspace from cookie); required in the cc-session route (no cookie
+// available — caller must specify which workspace to write to).
 export const ingestBulkBody = z.object({
   headings: z.array(z.string().min(1)).min(1).max(50),
   bodies: z.array(z.string()).optional(),
   mode: z.enum(["ui", "bulk"]).default("bulk"),
-  // Chunked-submission support. If provided, reuse the existing ingest_log
-  // row instead of creating a new one. Client-side chunking uses this to
-  // make N independent requests appear as one submission in /activity.
+  workspace_id: z.string().uuid().optional(),
   log_id: z.string().uuid().optional(),
   is_last_chunk: z.boolean().optional().default(true),
 });
@@ -40,11 +41,13 @@ export const ingestBulkBody = z.object({
 export const ingestBeginBody = z.object({
   all_headings: z.array(z.string().min(1)).min(1).max(200),
   mode: z.enum(["ui", "bulk"]).default("bulk"),
+  workspace_id: z.string().uuid().optional(),
 });
 
 export const ingestSingleBody = z.object({
   heading: z.string().min(1).max(500),
   body: z.string().max(20_000).optional(),
+  workspace_id: z.string().uuid().optional(),
 });
 
 export const ccSessionItem = z.object({
@@ -59,5 +62,31 @@ export const ccSessionItem = z.object({
 });
 
 export const ccSessionBody = z.object({
+  workspace_id: z.string().uuid(),
   items: z.array(ccSessionItem).min(1).max(100),
+});
+
+// Workspace management endpoints
+
+export const createWorkspaceBody = z.object({
+  name: z.string().min(1).max(80),
+});
+
+export const renameWorkspaceBody = z.object({
+  name: z.string().min(1).max(80),
+});
+
+export const createInviteBody = z.object({
+  expires_in_days: z.number().int().positive().max(365).optional(),
+  max_uses: z.number().int().positive().max(100).optional(),
+});
+
+export const setActiveWorkspaceBody = z.object({
+  workspace_id: z.string().uuid(),
+});
+
+export const ragQueryBody = z.object({
+  question: z.string().min(1).max(2000),
+  session_id: z.string().uuid().optional(),
+  workspace_id: z.string().uuid().optional(),
 });

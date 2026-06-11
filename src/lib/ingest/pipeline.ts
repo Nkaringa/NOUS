@@ -1,5 +1,9 @@
 // Per-heading ingest pipeline: categorize → normalize → define → embed → insert.
 // Reference: docs/ARCHITECTURE.md §3 Ingestion Pipeline Detail.
+//
+// All inserts include both user_id (the actor — who added it) and
+// workspace_id (which shared collection the note belongs to). RLS allows
+// the insert as long as the user is a member of the workspace.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withJsonSchema, embedText } from "@/lib/llm";
@@ -19,12 +23,13 @@ export type IngestItemResult =
 export async function ingestHeading(args: {
   supabase: SupabaseClient;
   userId: string;
+  workspaceId: string;
   heading: string;
   body: string | null;
   source: NoteSource;
   snapshot: TaxonomySnapshot;
 }): Promise<IngestItemResult> {
-  const { supabase, userId, heading, body, source, snapshot } = args;
+  const { supabase, userId, workspaceId, heading, body, source, snapshot } = args;
   const modelsUsed: string[] = [];
 
   try {
@@ -41,12 +46,10 @@ export async function ingestHeading(args: {
     let domain = cat.data.domain;
     let sub_category = cat.data.sub_category;
 
-    // 2. Confidence floor — low confidence → Uncategorized.
     if (cat.data.confidence < 0.5) {
       domain = "Uncategorized";
       sub_category = "Uncategorized";
     } else {
-      // 3. Normalize against existing taxonomy.
       const norm = await normalizeTaxonomyPair({
         proposed: { domain, sub_category },
         snapshot,
@@ -55,7 +58,7 @@ export async function ingestHeading(args: {
       sub_category = norm.canonical.sub_category;
     }
 
-    // 4. Define + exemplify.
+    // 2. Define + exemplify.
     const def = await withJsonSchema({
       prompt: definerPrompt({ heading, domain, sub_category, body }),
       schema: definerSchema,
@@ -65,15 +68,15 @@ export async function ingestHeading(args: {
     });
     modelsUsed.push(def.model);
 
-    // 5. Embed (heading + definition gives the strongest semantic anchor).
+    // 3. Embed.
     const embedding = await embedText(`${heading}\n\n${def.data.definition_md}`);
 
-    // 6. Insert note. RLS enforces user_id when called via cookie-auth supabase
-    //    client; service-role client must set user_id explicitly.
+    // 4. Insert note.
     const { data: inserted, error: insertErr } = await supabase
       .from("notes")
       .insert({
         user_id: userId,
+        workspace_id: workspaceId,
         heading,
         body_md: body,
         definition_md: def.data.definition_md,
@@ -83,15 +86,14 @@ export async function ingestHeading(args: {
         source,
         embedding,
       })
-      .select("id, user_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at")
+      .select("id, user_id, workspace_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at")
       .single();
 
     if (insertErr || !inserted) {
       throw new Error(`insert failed: ${insertErr?.message ?? "unknown"}`);
     }
 
-    // 7. Bump taxonomy usage_count (best-effort).
-    await bumpTaxonomy(supabase, { userId, domain, sub_category });
+    await bumpTaxonomy(supabase, { workspaceId, domain, sub_category });
 
     return { ok: true, note: inserted as Note, modelsUsed };
   } catch (err) {
@@ -102,6 +104,7 @@ export async function ingestHeading(args: {
 export async function ingestBatch(args: {
   supabase: SupabaseClient;
   userId: string;
+  workspaceId: string;
   items: Array<{ heading: string; body: string | null }>;
   source: NoteSource;
   onProgress?: (event: {
@@ -113,16 +116,16 @@ export async function ingestBatch(args: {
   results: IngestItemResult[];
   modelsUsed: string[];
 }> {
-  const snapshot = await fetchTaxonomySnapshot(args.supabase, args.userId);
+  const snapshot = await fetchTaxonomySnapshot(args.supabase, args.workspaceId);
   const allModels = new Set<string>();
   const results: IngestItemResult[] = [];
 
-  // Serial — each new note's taxonomy entry is visible to the next heading.
   for (let i = 0; i < args.items.length; i++) {
     const item = args.items[i]!;
     const res = await ingestHeading({
       supabase: args.supabase,
       userId: args.userId,
+      workspaceId: args.workspaceId,
       heading: item.heading,
       body: item.body,
       source: args.source,

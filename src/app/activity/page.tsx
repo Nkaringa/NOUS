@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { getActiveWorkspaceId } from "@/lib/workspaces/active";
 import type { IngestLog } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +12,16 @@ const RECENT_PARTIAL_WINDOW_MS = 10 * 60 * 1000;
 
 export default async function ActivityPage() {
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const workspaceId = await getActiveWorkspaceId(supabase, user.id);
+  if (!workspaceId) return null;
+
   const { data, error } = await supabase
     .from("ingest_log")
-    .select("id, user_id, mode, model, raw_input, parsed_count, status, error, created_at")
+    .select("id, user_id, workspace_id, mode, model, raw_input, parsed_count, status, error, created_at")
+    .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -24,7 +32,6 @@ export default async function ActivityPage() {
     return age < RECENT_PARTIAL_WINDOW_MS;
   });
 
-  // Group by day for tidier scanning
   const byDay = new Map<string, IngestLog[]>();
   for (const r of rows as IngestLog[]) {
     const day = new Date(r.created_at).toLocaleDateString(undefined, {

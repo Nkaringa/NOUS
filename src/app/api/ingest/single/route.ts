@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ingestSingleBody } from "@/lib/zod-schemas";
 import { ingestBatch } from "@/lib/ingest/pipeline";
+import { resolveWorkspaceId } from "@/lib/workspaces/active";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -29,9 +30,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const workspaceId = await resolveWorkspaceId({
+    supabase,
+    userId: user.id,
+    explicit: parsed.data.workspace_id ?? null,
+  });
+  if (!workspaceId) {
+    return NextResponse.json(
+      { error: "no workspace available" },
+      { status: 403 },
+    );
+  }
+
   const { results, modelsUsed } = await ingestBatch({
     supabase,
     userId: user.id,
+    workspaceId,
     items: [{ heading: parsed.data.heading, body: parsed.data.body ?? null }],
     source: "ui",
   });
@@ -40,6 +54,7 @@ export async function POST(request: NextRequest) {
   if (!first || !first.ok) {
     await supabase.from("ingest_log").insert({
       user_id: user.id,
+      workspace_id: workspaceId,
       mode: "ui",
       model: modelsUsed.join(",") || "unknown",
       raw_input: parsed.data.heading,
@@ -55,6 +70,7 @@ export async function POST(request: NextRequest) {
 
   await supabase.from("ingest_log").insert({
     user_id: user.id,
+    workspace_id: workspaceId,
     mode: "ui",
     model: modelsUsed.join(",") || "unknown",
     raw_input: parsed.data.heading,

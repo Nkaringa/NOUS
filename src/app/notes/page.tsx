@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NoteCard } from "@/components/NoteCard";
 import { TaxonomyTree } from "@/components/TaxonomyTree";
 import { fetchTaxonomyTree } from "@/lib/ingest/taxonomy";
+import { getActiveWorkspaceId } from "@/lib/workspaces/active";
 import type { Note } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,13 @@ export default async function NotesPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
+  const workspaceId = await getActiveWorkspaceId(supabase, user.id);
+  if (!workspaceId) return null;
+
   let query = supabase
     .from("notes")
-    .select("id, user_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at")
+    .select("id, user_id, workspace_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at")
+    .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -29,7 +34,7 @@ export default async function NotesPage({
 
   const [{ data: notes }, tree] = await Promise.all([
     query,
-    fetchTaxonomyTree(supabase, user.id),
+    fetchTaxonomyTree(supabase, workspaceId),
   ]);
 
   const title = sp.sub_category ?? sp.domain ?? "All notes";

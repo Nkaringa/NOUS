@@ -1,8 +1,9 @@
-// GET /api/notes — list with optional filters.
-// Query params: domain, sub_category, q (full-text), limit, offset.
+// GET /api/notes — list notes in the active workspace.
+// Query params: domain, sub_category, q (full-text), limit, offset, workspace_id
 
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveWorkspaceId } from "@/lib/workspaces/active";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,15 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const sp = request.nextUrl.searchParams;
+  const workspaceId = await resolveWorkspaceId({
+    supabase,
+    userId: user.id,
+    explicit: sp.get("workspace_id"),
+  });
+  if (!workspaceId) {
+    return NextResponse.json({ error: "no workspace available" }, { status: 403 });
+  }
+
   const domain = sp.get("domain");
   const sub_category = sp.get("sub_category");
   const q = sp.get("q");
@@ -21,9 +31,10 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("notes")
     .select(
-      "id, user_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at",
+      "id, user_id, workspace_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at",
       { count: "exact" },
     )
+    .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 

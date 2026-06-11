@@ -1,30 +1,48 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getActiveWorkspaceId } from "@/lib/workspaces/active";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
 
-  const [recentNotesRes, recentSessionsRes, recentActivityRes] = await Promise.all([
+  const workspaceId = await getActiveWorkspaceId(supabase, user.id);
+  if (!workspaceId) {
+    return (
+      <main className="mx-auto max-w-[1100px] px-8 py-10">
+        <p className="text-[14px] text-ink-mid">
+          No workspace available. <Link href="/workspaces" className="text-red hover:underline">Create one</Link>.
+        </p>
+      </main>
+    );
+  }
+
+  const [wsRow, recentNotesRes, recentSessionsRes, recentActivityRes] = await Promise.all([
+    supabase.from("workspaces").select("name").eq("id", workspaceId).maybeSingle(),
     supabase
       .from("notes")
       .select("id, heading, domain, sub_category, created_at")
+      .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false })
       .limit(5),
     supabase
       .from("chat_sessions")
       .select("id, title, created_at")
+      .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false })
       .limit(3),
     supabase
       .from("ingest_log")
       .select("id, mode, status, parsed_count, created_at")
+      .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false })
       .limit(3),
   ]);
 
+  const workspaceName = wsRow.data?.name ?? "Workspace";
   const recentNotes = recentNotesRes.data ?? [];
   const recentSessions = recentSessionsRes.data ?? [];
   const recentActivity = recentActivityRes.data ?? [];
@@ -33,9 +51,11 @@ export default async function HomePage() {
     <main className="mx-auto max-w-[1100px] px-8 py-10">
       <div className="mb-8 flex items-baseline justify-between">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">Dashboard</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight">
+            {workspaceName}
+          </h1>
           <p className="mt-1 text-[13px] text-ink-mid">
-            Signed in as {user?.email}
+            Signed in as {user.email}
           </p>
         </div>
         <Link
@@ -47,7 +67,6 @@ export default async function HomePage() {
       </div>
 
       <div className="grid gap-12 md:grid-cols-[1.4fr_1fr]">
-        {/* LEFT: recent notes */}
         <section>
           <SectionHeader title="Recent notes" meta={`${recentNotes.length === 0 ? "none yet" : recentNotes.length + " shown"}`} link={{ href: "/notes", label: "view all" }} />
           {recentNotes.length === 0 ? (
@@ -63,7 +82,7 @@ export default async function HomePage() {
                     className="group -mx-2 grid grid-cols-[1fr_auto] items-center gap-4 rounded px-2 py-3 border-b border-hairline hover:bg-bg-soft"
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-[14px] text-ink group-hover:text-ink">
+                      <div className="truncate text-[14px] text-ink">
                         {n.heading}
                       </div>
                       <div className="mt-0.5 text-[11px] text-ink-mid">
@@ -82,7 +101,6 @@ export default async function HomePage() {
           )}
         </section>
 
-        {/* RIGHT: recent chats + recent activity */}
         <section>
           <SectionHeader title="Recent chats" meta={`${recentSessions.length === 0 ? "none yet" : recentSessions.length + " shown"}`} link={{ href: "/chat", label: "view all" }} />
           {recentSessions.length === 0 ? (

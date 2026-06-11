@@ -15,9 +15,9 @@ export type RetrievedNote = {
   example_md: string | null;
   domain: string;
   sub_category: string;
-  vec_similarity: number; // 0..1, higher = more semantically similar (0 if not in vec results)
-  fts_rank: number;        // >0 if matched FTS, 0 otherwise
-  fused_score: number;     // RRF fused score
+  vec_similarity: number;
+  fts_rank: number;
+  fused_score: number;
 };
 
 const RRF_K = 60;
@@ -25,10 +25,11 @@ const PER_SOURCE_K = 20;
 
 export async function hybridSearch(args: {
   supabase: SupabaseClient;
+  workspaceId: string;
   query: string;
   k: number;
 }): Promise<RetrievedNote[]> {
-  const { supabase, query, k } = args;
+  const { supabase, workspaceId, query, k } = args;
   const trimmed = query.trim();
   if (!trimmed) return [];
 
@@ -40,11 +41,16 @@ export async function hybridSearch(args: {
     queryEmbedding = [];
   }
 
-  // 2. Parallel keyword + semantic search.
+  // 2. Parallel keyword + semantic search — both scoped to workspace.
   const [ftsRes, vecRes] = await Promise.all([
-    supabase.rpc("search_notes_fts", { p_query: trimmed, p_k: PER_SOURCE_K }),
+    supabase.rpc("search_notes_fts", {
+      p_workspace_id: workspaceId,
+      p_query: trimmed,
+      p_k: PER_SOURCE_K,
+    }),
     queryEmbedding.length > 0
       ? supabase.rpc("search_notes_vec", {
+          p_workspace_id: workspaceId,
           p_embedding: queryEmbedding,
           p_k: PER_SOURCE_K,
         })
@@ -54,7 +60,6 @@ export async function hybridSearch(args: {
   const ftsRows = (ftsRes.data ?? []) as Array<{ id: string; rank: number }>;
   const vecRows = (vecRes.data ?? []) as Array<{ id: string; similarity: number }>;
 
-  // Build per-id score maps for later attachment.
   const ftsScoreById = new Map(ftsRows.map((r) => [r.id, r.rank]));
   const vecScoreById = new Map(vecRows.map((r) => [r.id, r.similarity]));
 
@@ -75,10 +80,11 @@ export async function hybridSearch(args: {
     .slice(0, k);
   const topIds = topEntries.map(([id]) => id);
 
-  // 5. Hydrate notes (preserves fusion order, attaches per-note signals).
+  // 5. Hydrate notes (workspace filter is defense-in-depth alongside RLS).
   const { data: notes } = await supabase
     .from("notes")
     .select("id, heading, definition_md, example_md, domain, sub_category")
+    .eq("workspace_id", workspaceId)
     .in("id", topIds);
 
   const byId = new Map((notes ?? []).map((n) => [n.id, n]));
@@ -96,22 +102,8 @@ export async function hybridSearch(args: {
   return out;
 }
 
-// Tunable. Empirically text-embedding-3-small reports ~0.7+ for paraphrases,
-// ~0.4-0.6 for genuinely related topics, < 0.3 for noise. Slightly stricter
-// (0.35) than the previous batch-level threshold (0.3) because this now
-// gates each note individually rather than the whole batch.
 const MIN_VEC_SIMILARITY = 0.35;
 
-/**
- * Filter retrieved notes to only those individually relevant. A note passes
- * if it had any FTS keyword match OR its vector similarity meets the
- * threshold. The result is used for BOTH the displayed "Retrieved sources"
- * row AND the LLM context — keeping the model's view consistent with the
- * user's view.
- *
- * If the returned list is empty, the caller should treat this as a
- * "no relevant notes" case (banner + general-knowledge answer).
- */
 export function filterRelevantNotes(notes: RetrievedNote[]): RetrievedNote[] {
   return notes.filter(
     (n) => n.fts_rank > 0 || n.vec_similarity >= MIN_VEC_SIMILARITY,

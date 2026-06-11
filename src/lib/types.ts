@@ -4,10 +4,12 @@
 export type NoteSource = "ui" | "bulk" | "cc-session" | "api";
 export type IngestMode = NoteSource | "recategorize";
 export type IngestStatus = "success" | "partial" | "failed";
+export type WorkspaceRole = "owner" | "member";
 
 export type Note = {
   id: string;
-  user_id: string;
+  user_id: string;       // created_by — the actor inside a workspace
+  workspace_id: string;  // scoping
   heading: string;
   body_md: string | null;
   definition_md: string;
@@ -36,13 +38,41 @@ export type TaxonomySnapshot = Array<{
 
 export type IngestLog = {
   id: string;
-  user_id: string;
+  user_id: string;       // actor
+  workspace_id: string;
   mode: IngestMode;
   model: string;
   raw_input: string;
   parsed_count: number;
   status: IngestStatus;
   error: string | null;
+  created_at: string;
+};
+
+export type Workspace = {
+  id: string;
+  name: string;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspaceMember = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  role: WorkspaceRole;
+  joined_at: string;
+};
+
+export type WorkspaceInvite = {
+  id: string;
+  workspace_id: string;
+  token: string;
+  created_by: string;
+  expires_at: string | null;
+  max_uses: number | null;
+  used_count: number;
   created_at: string;
 };
 
