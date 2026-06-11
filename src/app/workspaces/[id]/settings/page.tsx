@@ -80,6 +80,18 @@ export default async function WorkspaceSettingsPage({
         </section>
       )}
 
+      <section className="mb-10">
+        <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-ink-mid">
+          Taxonomy
+        </h2>
+        <Link
+          href={`/workspaces/${ws.id}/taxonomy`}
+          className="inline-block rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg-soft hover:text-ink"
+        >
+          {isOwner ? "Rename or merge sub-categories →" : "View taxonomy →"}
+        </Link>
+      </section>
+
       {isOwner && (
         <section>
           <DangerZone workspaceId={ws.id} workspaceName={ws.name} />
