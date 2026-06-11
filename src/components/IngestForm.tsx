@@ -41,6 +41,7 @@ export function IngestForm() {
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dupePrompt, setDupePrompt] = useState<DuplicatePrompt | null>(null);
+  const [showBody, setShowBody] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   function reset() {
@@ -261,7 +262,7 @@ export function IngestForm() {
       </div>
 
       {mode === "single" ? (
-        <>
+        <div className="space-y-2">
           <input
             type="text"
             value={input}
@@ -270,15 +271,39 @@ export function IngestForm() {
             disabled={isRunning}
             className="w-full rounded border border-hairline-strong bg-bg-input px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-soft focus:border-ink disabled:opacity-50"
           />
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Optional body / context (markdown ok)"
-            rows={4}
-            disabled={isRunning}
-            className="w-full rounded border border-hairline-strong bg-bg-input px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-soft focus:border-ink disabled:opacity-50"
-          />
-        </>
+          {showBody || body.trim() ? (
+            <div className="space-y-1.5">
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Context, source material, or your own draft. Markdown ok."
+                rows={4}
+                disabled={isRunning}
+                className="w-full rounded border border-hairline-strong bg-bg-input px-3 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-soft focus:border-ink disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setBody("");
+                  setShowBody(false);
+                }}
+                disabled={isRunning}
+                className="text-[11px] text-ink-soft hover:text-ink-mid disabled:opacity-50"
+              >
+                − Remove body
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowBody(true)}
+              disabled={isRunning}
+              className="text-[12px] text-ink-mid hover:text-ink disabled:opacity-50"
+            >
+              + Add body / context
+            </button>
+          )}
+        </div>
       ) : (
         <>
           <textarea
@@ -383,28 +408,57 @@ export function IngestForm() {
               continues server-side.
             </div>
           )}
-          <ul className="rounded border border-hairline">
-            {items.map((it, i) => (
-              <li
-                key={i}
-                className="flex items-center gap-3 border-b border-hairline px-3 py-2 last:border-b-0"
-              >
-                <StatusDot status={it.status} />
-                <span className="flex-1 truncate text-[13px] text-ink">{it.heading}</span>
-                {it.status === "ok" && (
-                  <span className="text-[11px] text-ink-mid">
-                    {it.note.domain} <span className="text-ink-soft">/</span>{" "}
-                    <span className="text-red">{it.note.sub_category}</span>
+          <div className="overflow-hidden rounded border border-hairline">
+            {items.map((it, i) =>
+              it.status === "ok" ? (
+                <Link
+                  key={i}
+                  href={`/notes/${it.note.id}`}
+                  className="group flex items-start gap-3 border-b border-hairline px-3 py-2.5 last:border-b-0 hover:bg-bg-soft"
+                >
+                  <span className="mt-1.5 shrink-0">
+                    <StatusDot status={it.status} />
                   </span>
-                )}
-                {it.status === "failed" && (
-                  <span className="truncate text-[11px] text-red-deep" title={it.error}>
-                    {it.error}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-[13px] font-medium text-ink">
+                        {it.heading}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-ink-mid">
+                        {it.note.domain}{" "}
+                        <span className="text-ink-soft">/</span>{" "}
+                        <span className="text-red">{it.note.sub_category}</span>
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-ink-mid">
+                      {stripMarkdown(it.note.definition_md)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 self-center text-[11px] text-ink-soft opacity-0 transition-opacity group-hover:opacity-100">
+                    View →
                   </span>
-                )}
-              </li>
-            ))}
-          </ul>
+                </Link>
+              ) : (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 border-b border-hairline px-3 py-2.5 last:border-b-0"
+                >
+                  <StatusDot status={it.status} />
+                  <span className="flex-1 truncate text-[13px] text-ink">
+                    {it.heading}
+                  </span>
+                  {it.status === "failed" && (
+                    <span
+                      className="truncate text-[11px] text-red-deep"
+                      title={it.error}
+                    >
+                      {it.error}
+                    </span>
+                  )}
+                </div>
+              ),
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -442,6 +496,21 @@ function ParsePreview({ input, disabled }: { input: string; disabled: boolean })
       </ol>
     </div>
   );
+}
+
+// Cheap markdown → plain-text for the preview line. Drops headers,
+// list markers, bold/italic markers, and inline code backticks so the
+// snippet reads cleanly when truncated to two lines.
+function stripMarkdown(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#+\s+/gm, "")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function StatusDot({ status }: { status: ItemState["status"] }) {

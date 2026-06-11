@@ -53,10 +53,10 @@ export default async function NotesPage({
 
         <div>
           <div className="mb-5 flex items-baseline justify-between">
-            <h1 className="text-[22px] font-semibold tracking-tight">
+            <h1>
               {title}
               {crumb && (
-                <span className="ml-2 text-[13px] font-normal text-ink-mid">
+                <span className="ml-2 text-[14px] font-normal text-ink-mid">
                   {crumb}
                 </span>
               )}

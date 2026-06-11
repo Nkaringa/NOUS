@@ -35,10 +35,7 @@ export default async function ChatSessionPage({
 
   return (
     <div>
-      <h1
-        className="truncate text-[22px] font-semibold tracking-tight"
-        title={session.title}
-      >
+      <h1 className="truncate" title={session.title}>
         {session.title}
       </h1>
       <p className="mt-1 text-[13px] text-ink-mid">

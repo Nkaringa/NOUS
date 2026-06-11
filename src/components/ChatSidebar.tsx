@@ -42,21 +42,21 @@ export function ChatSidebar({ sessions }: { sessions: ChatSessionListItem[] }) {
       <Link
         href="/chat"
         className={cn(
-          "mb-5 block rounded px-3 py-2 text-center text-[13px] font-medium",
+          "mb-5 block rounded px-3 py-2 text-center text-[13px] font-medium transition-colors",
           !activeId
-            ? "bg-ink text-white hover:bg-red"
-            : "border border-hairline-strong text-ink-mid hover:bg-bg-soft hover:text-ink",
+            ? "border border-hairline-strong text-ink hover:border-red hover:text-red"
+            : "border border-hairline text-ink-mid hover:bg-bg-soft hover:text-ink",
         )}
       >
         + New chat
       </Link>
-      <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-mid">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-mid">
         Recent
       </div>
       {sessions.length === 0 ? (
         <p className="text-[12px] text-ink-soft">No chats yet.</p>
       ) : (
-        <ul>
+        <ul className="space-y-0.5">
           {sessions.map((s) => {
             const isActive = s.id === activeId;
             return (
@@ -64,10 +64,10 @@ export function ChatSidebar({ sessions }: { sessions: ChatSessionListItem[] }) {
                 <Link
                   href={`/chat/${s.id}`}
                   className={cn(
-                    "block rounded py-1.5 pr-7 text-[13px] leading-snug",
+                    "block rounded py-2 pr-7 text-[13px] leading-snug transition-colors",
                     isActive
                       ? "border-l-2 border-red bg-bg-soft pl-3 font-medium text-ink -ml-px"
-                      : "px-2 -mx-2 text-ink-mid hover:bg-bg-soft hover:text-ink",
+                      : "px-2 -mx-2 font-medium text-ink-mid hover:bg-bg-soft hover:text-ink",
                   )}
                   title={s.title}
                 >

@@ -21,12 +21,22 @@ export type ChatMessage = {
   pending?: boolean;
 };
 
+const SAMPLE_QUESTIONS = [
+  "What concepts in my notes relate to consensus?",
+  "Summarize what I know about cloud networking.",
+  "How is BGP convergence related to database transactions?",
+];
+
 export function RAGChat({
   sessionId: initialSessionId,
   initialMessages,
+  noteCount,
+  chatCount,
 }: {
   sessionId: string | null;
   initialMessages: ChatMessage[];
+  noteCount?: number;
+  chatCount?: number;
 }) {
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -149,19 +159,38 @@ export function RAGChat({
     }
   }
 
+  const isEmpty = messages.length === 0;
+
   return (
     <div className="flex h-[calc(100vh-220px)] flex-col">
       <div
         ref={scrollerRef}
         className="flex-1 space-y-6 overflow-y-auto pb-6 pr-2"
       >
-        {messages.length === 0 && <EmptyState />}
+        {isEmpty && (
+          <EmptyState noteCount={noteCount} chatCount={chatCount} />
+        )}
         {messages.map((m, i) => (
           <MessageBlock key={i} message={m} />
         ))}
       </div>
 
       <div className="border-t border-hairline pt-4">
+        {isEmpty && (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {SAMPLE_QUESTIONS.map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => setInput(q)}
+                disabled={running}
+                className="rounded-full border border-hairline px-3 py-1 text-[12px] text-ink-mid transition-colors hover:border-hairline-strong hover:bg-bg-soft hover:text-ink disabled:opacity-50"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -189,28 +218,66 @@ export function RAGChat({
   );
 }
 
-function EmptyState() {
-  const samples = [
-    "What concepts in my notes relate to consensus?",
-    "Summarize what I know about cloud networking.",
-    "How is BGP convergence related to database transactions?",
-  ];
+function EmptyState({
+  noteCount,
+  chatCount,
+}: {
+  noteCount?: number;
+  chatCount?: number;
+}) {
+  const hasStats = noteCount !== undefined || chatCount !== undefined;
   return (
-    <div className="mt-16 text-center">
-      <p className="text-[14px] text-ink-mid">
-        Ask anything that can be answered from your notes.
-      </p>
-      <p className="mt-1 text-[12px] text-ink-soft">
-        Each answer cites the source notes inline.
-      </p>
-      <ul className="mx-auto mt-8 max-w-[420px] space-y-2 text-left text-[13px]">
-        {samples.map((s) => (
-          <li key={s} className="text-ink-mid">
-            <span className="mr-2 text-red">▸</span>
-            {s}
-          </li>
-        ))}
-      </ul>
+    <div className="mt-12">
+      {hasStats && (
+        <div className="flex gap-6 border-b border-hairline pb-5 text-[12px] text-ink-mid">
+          {noteCount !== undefined && (
+            <Stat
+              label="notes available"
+              value={noteCount}
+              empty="Add notes to power answers"
+            />
+          )}
+          {chatCount !== undefined && (
+            <Stat label="past chats" value={chatCount} empty="No chats yet" />
+          )}
+        </div>
+      )}
+      <div className="mt-8">
+        <p className="text-[13px] text-ink-mid">
+          Ask anything that can be answered from your notes. Each answer cites
+          the source notes inline.
+        </p>
+        <p className="mt-1 text-[12px] text-ink-soft">
+          Pick a suggestion below the composer, or type your own question.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  empty,
+}: {
+  label: string;
+  value: number;
+  empty: string;
+}) {
+  if (value === 0) {
+    return (
+      <div>
+        <div className="font-mono text-[18px] font-medium text-ink-soft">0</div>
+        <div className="mt-0.5 text-[11px] text-ink-soft">{empty}</div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="font-mono text-[18px] font-medium text-ink">{value}</div>
+      <div className="mt-0.5 text-[11px] uppercase tracking-wider text-ink-mid">
+        {label}
+      </div>
     </div>
   );
 }

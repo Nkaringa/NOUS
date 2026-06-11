@@ -63,7 +63,7 @@ export default async function TaxonomyJanitorPage({
       </Link>
 
       <header className="mt-4 mb-8">
-        <h1 className="text-[22px] font-semibold tracking-tight">Taxonomy</h1>
+        <h1>Taxonomy</h1>
         <p className="mt-1 text-[13px] text-ink-mid">
           {isOwner
             ? "Rename a sub-category (or rename a whole domain) to clean up drift. Renaming to an existing pair merges the notes into it."
