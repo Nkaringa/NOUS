@@ -26,6 +26,66 @@ export type IngestItemResult =
   | { ok: true; note: Note; modelsUsed: string[] }
   | { ok: false; heading: string; error: string };
 
+export type NearDuplicate = {
+  id: string;
+  heading: string;
+  domain: string;
+  sub_category: string;
+  similarity: number;
+};
+
+/**
+ * Cosine-similarity threshold above which a new heading is treated as a
+ * near-duplicate of an existing note in the same workspace. Tuned by
+ * inspection: 0.92 catches "BGP" vs "BGP convergence" and exact restates
+ * without flagging genuinely different topics in the same sub-category.
+ */
+export const DUPLICATE_THRESHOLD = 0.92;
+
+/**
+ * Embed the heading alone and look up the most-similar existing note in
+ * the workspace via pgvector. Returns null if no notes pass the threshold.
+ */
+export async function findNearDuplicate(args: {
+  supabase: SupabaseClient;
+  workspaceId: string;
+  heading: string;
+}): Promise<NearDuplicate | null> {
+  const { supabase, workspaceId, heading } = args;
+  let embedding: number[];
+  try {
+    embedding = await embedText(heading);
+  } catch {
+    return null;
+  }
+  if (embedding.length === 0) return null;
+
+  const { data, error } = await supabase.rpc("search_notes_vec", {
+    p_workspace_id: workspaceId,
+    p_embedding: embedding,
+    p_k: 1,
+  });
+  if (error) return null;
+  const rows = (data ?? []) as Array<{ id: string; similarity: number }>;
+  const top = rows[0];
+  if (!top || top.similarity < DUPLICATE_THRESHOLD) return null;
+
+  const { data: noteRow } = await supabase
+    .from("notes")
+    .select("id, heading, domain, sub_category")
+    .eq("id", top.id)
+    .maybeSingle();
+  if (!noteRow) return null;
+
+  return {
+    id: noteRow.id as string,
+    heading: noteRow.heading as string,
+    domain: noteRow.domain as string,
+    sub_category: noteRow.sub_category as string,
+    similarity: top.similarity,
+  };
+}
+
 export async function ingestHeading(args: {
   supabase: SupabaseClient;
   userId: string;

@@ -48,6 +48,10 @@ export const ingestSingleBody = z.object({
   heading: z.string().min(1).max(500),
   body: z.string().max(20_000).optional(),
   workspace_id: z.string().uuid().optional(),
+  // When true, skip the near-duplicate pre-check and insert even if a
+  // similar note already exists in the workspace. Set by the UI after the
+  // user dismisses the duplicate warning modal.
+  force: z.boolean().optional().default(false),
 });
 
 export const ccSessionItem = z.object({

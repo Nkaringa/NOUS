@@ -2,6 +2,7 @@
 
 import { useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { parseHeadings, type ParsedHeading } from "@/lib/ingest/parse";
 import type { Note } from "@/lib/types";
@@ -12,6 +13,18 @@ type ItemState =
   | { status: "pending"; heading: string }
   | { status: "ok"; heading: string; note: Note }
   | { status: "failed"; heading: string; error: string };
+
+type DuplicatePrompt = {
+  heading: string;
+  body: string;
+  duplicate: {
+    id: string;
+    heading: string;
+    domain: string;
+    sub_category: string;
+    similarity: number;
+  };
+};
 
 // Each chunk is a separate /api/ingest call → a fresh function invocation
 // with its own 60s budget on Vercel Hobby. Chunks processed sequentially so
@@ -27,6 +40,7 @@ export function IngestForm() {
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "error">("idle");
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dupePrompt, setDupePrompt] = useState<DuplicatePrompt | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   function reset() {
@@ -35,20 +49,34 @@ export function IngestForm() {
     setError(null);
   }
 
-  async function submitSingle() {
+  async function submitSingle(opts?: { force?: boolean; heading?: string; body?: string }) {
+    const headingValue = (opts?.heading ?? input).trim();
+    const bodyValue = (opts?.body ?? body).trim();
     reset();
+    setDupePrompt(null);
     setPhase("running");
-    setItems([{ status: "pending", heading: input.trim() }]);
+    setItems([{ status: "pending", heading: headingValue }]);
     try {
       const res = await fetch("/api/ingest/single", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          heading: input.trim(),
-          body: body.trim() || undefined,
+          heading: headingValue,
+          body: bodyValue || undefined,
+          force: opts?.force ?? false,
         }),
       });
       const data = await res.json();
+      if (res.status === 409 && data.duplicate) {
+        setDupePrompt({
+          heading: headingValue,
+          body: bodyValue,
+          duplicate: data.duplicate,
+        });
+        setItems([]);
+        setPhase("idle");
+        return;
+      }
       if (!res.ok) throw new Error(data.error ?? "ingest failed");
       setItems([{ status: "ok", heading: data.heading, note: data as Note }]);
       setSummary("1 ingested");
@@ -56,7 +84,7 @@ export function IngestForm() {
       router.refresh();
     } catch (e) {
       const msg = (e as Error).message;
-      setItems([{ status: "failed", heading: input.trim(), error: msg }]);
+      setItems([{ status: "failed", heading: headingValue, error: msg }]);
       setError(msg);
       setPhase("error");
     }
@@ -270,7 +298,7 @@ export function IngestForm() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={mode === "single" ? submitSingle : submitBulk}
+          onClick={() => (mode === "single" ? submitSingle() : submitBulk())}
           disabled={isRunning || !input.trim()}
           className="rounded bg-red px-4 py-2 text-[13px] font-medium text-white hover:bg-red-deep disabled:opacity-50"
         >
@@ -290,6 +318,56 @@ export function IngestForm() {
       {error && (
         <div className="rounded border border-red bg-red-bg p-3 text-[12px] text-red-deep">
           {error}
+        </div>
+      )}
+
+      {dupePrompt && (
+        <div className="rounded border border-hairline-strong bg-bg-soft p-4">
+          <div className="text-[12px] font-medium uppercase tracking-wider text-ink-mid">
+            Possible duplicate
+          </div>
+          <p className="mt-2 text-[13px] text-ink">
+            You may already have a note about this — it&apos;s{" "}
+            <span className="font-medium">
+              {Math.round(dupePrompt.duplicate.similarity * 100)}%
+            </span>{" "}
+            similar to:
+          </p>
+          <div className="mt-2 rounded border border-hairline bg-bg p-3">
+            <Link
+              href={`/notes/${dupePrompt.duplicate.id}`}
+              className="text-[14px] font-medium text-ink hover:text-red"
+            >
+              {dupePrompt.duplicate.heading}
+            </Link>
+            <div className="mt-1 text-[11px] text-ink-mid">
+              {dupePrompt.duplicate.domain}{" "}
+              <span className="text-ink-soft">/</span>{" "}
+              <span className="text-red">{dupePrompt.duplicate.sub_category}</span>
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                submitSingle({
+                  force: true,
+                  heading: dupePrompt.heading,
+                  body: dupePrompt.body,
+                })
+              }
+              className="rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg hover:text-ink"
+            >
+              Insert anyway
+            </button>
+            <button
+              type="button"
+              onClick={() => setDupePrompt(null)}
+              className="rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg hover:text-ink"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
