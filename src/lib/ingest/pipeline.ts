@@ -35,16 +35,26 @@ export type NearDuplicate = {
 };
 
 /**
- * Cosine-similarity threshold above which a new heading is treated as a
- * near-duplicate of an existing note in the same workspace. Tuned by
- * inspection: 0.92 catches "BGP" vs "BGP convergence" and exact restates
- * without flagging genuinely different topics in the same sub-category.
+ * Cosine-similarity threshold for the vector-based near-duplicate check.
+ * Lower than you'd expect (0.85) because existing notes are embedded as
+ * "heading + definition_md" but the dupe check embeds the new heading
+ * alone — heading-vs-(heading+def) lands around 0.7-0.9 even for clear
+ * matches. The case-insensitive string match below catches exact restates;
+ * vector kicks in for fuzzy ones like "BGP" vs "BGP convergence".
  */
-export const DUPLICATE_THRESHOLD = 0.92;
+export const DUPLICATE_THRESHOLD = 0.85;
 
 /**
- * Embed the heading alone and look up the most-similar existing note in
- * the workspace via pgvector. Returns null if no notes pass the threshold.
+ * Look up the most-similar existing note in the workspace.
+ *
+ * Two checks in order:
+ *   1. Case-insensitive exact match on heading (after trim). Returns
+ *      similarity = 1.0 — catches "SHIM VPC" vs "shim VPC" cleanly without
+ *      depending on embedding quality.
+ *   2. Vector similarity via the existing search_notes_vec RPC. Catches
+ *      fuzzy near-restates where the wording differs.
+ *
+ * Returns null if neither check turns up anything past the threshold.
  */
 export async function findNearDuplicate(args: {
   supabase: SupabaseClient;
@@ -52,9 +62,34 @@ export async function findNearDuplicate(args: {
   heading: string;
 }): Promise<NearDuplicate | null> {
   const { supabase, workspaceId, heading } = args;
+  const trimmed = heading.trim();
+  if (!trimmed) return null;
+
+  // 1. Case-insensitive exact match on heading. Escape ilike's wildcards
+  //    (% and _) so headings containing them ("100% renewable") still
+  //    match exactly instead of acting as a pattern.
+  const ilikePattern = trimmed.replace(/[\\%_]/g, "\\$&");
+  const { data: exactMatches } = await supabase
+    .from("notes")
+    .select("id, heading, domain, sub_category")
+    .eq("workspace_id", workspaceId)
+    .ilike("heading", ilikePattern)
+    .limit(1);
+  const exact = (exactMatches ?? [])[0];
+  if (exact) {
+    return {
+      id: exact.id as string,
+      heading: exact.heading as string,
+      domain: exact.domain as string,
+      sub_category: exact.sub_category as string,
+      similarity: 1.0,
+    };
+  }
+
+  // 2. Vector similarity.
   let embedding: number[];
   try {
-    embedding = await embedText(heading);
+    embedding = await embedText(trimmed);
   } catch {
     return null;
   }
