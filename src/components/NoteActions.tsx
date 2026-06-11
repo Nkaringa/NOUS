@@ -26,6 +26,21 @@ export function NoteActions({ noteId }: { noteId: string }) {
     });
   }
 
+  function regenerate() {
+    setErr(null);
+    setMsg(null);
+    startTransition(async () => {
+      const res = await fetch(`/api/notes/${noteId}/regenerate`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setErr(data.error ?? "regenerate failed");
+        return;
+      }
+      setMsg("Definition + example rewritten.");
+      router.refresh();
+    });
+  }
+
   function del() {
     if (!confirm("Delete this note? This cannot be undone.")) return;
     setErr(null);
@@ -42,14 +57,22 @@ export function NoteActions({ noteId }: { noteId: string }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={regenerate}
+          disabled={pending}
+          className="rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg-soft hover:text-ink disabled:opacity-50"
+        >
+          {pending ? "Working…" : "Regenerate definition"}
+        </button>
         <button
           type="button"
           onClick={recategorize}
           disabled={pending}
           className="rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg-soft hover:text-ink disabled:opacity-50"
         >
-          {pending ? "Working…" : "Re-categorize"}
+          Re-categorize
         </button>
         <button
           type="button"

@@ -59,8 +59,8 @@ export default async function WorkspacesPage() {
 
   return (
     <main className="mx-auto max-w-[820px] px-8 py-10">
-      <div className="mb-8">
-        <h1 className="text-[22px] font-semibold tracking-tight">Workspaces</h1>
+      <div className="mb-10">
+        <h1>Workspaces</h1>
         <p className="mt-1 text-[13px] text-ink-mid">
           A workspace is a shared collection of notes, chats, and activity. You can
           have multiple — one for solo work, others shared with collaborators.
@@ -68,7 +68,7 @@ export default async function WorkspacesPage() {
       </div>
 
       <section className="mb-12">
-        <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-ink-mid">
+        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-mid">
           Your workspaces
         </h2>
         <ul>
@@ -84,7 +84,7 @@ export default async function WorkspacesPage() {
             return (
               <li
                 key={w.id}
-                className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-hairline py-3"
+                className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-hairline py-4 last:border-b-0"
               >
                 <div className="min-w-0">
                   <div className="flex items-baseline gap-2">
@@ -92,12 +92,12 @@ export default async function WorkspacesPage() {
                       {w.name}
                     </span>
                     {isActive && (
-                      <span className="rounded bg-red-bg px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-red-deep">
+                      <span className="rounded bg-red-bg px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-red-deep">
                         active
                       </span>
                     )}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-ink-soft">
+                  <div className="mt-1 text-[12px] text-ink-mid">
                     {counts.notes} note{counts.notes === 1 ? "" : "s"} ·{" "}
                     {counts.members} member{counts.members === 1 ? "" : "s"} ·{" "}
                     {role}
@@ -116,7 +116,7 @@ export default async function WorkspacesPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-ink-mid">
+        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-mid">
           Create a new workspace
         </h2>
         <CreateWorkspaceForm />

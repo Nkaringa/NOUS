@@ -48,6 +48,10 @@ export const ingestSingleBody = z.object({
   heading: z.string().min(1).max(500),
   body: z.string().max(20_000).optional(),
   workspace_id: z.string().uuid().optional(),
+  // When true, skip the near-duplicate pre-check and insert even if a
+  // similar note already exists in the workspace. Set by the UI after the
+  // user dismisses the duplicate warning modal.
+  force: z.boolean().optional().default(false),
 });
 
 export const ccSessionItem = z.object({
@@ -83,6 +87,26 @@ export const createInviteBody = z.object({
 
 export const setActiveWorkspaceBody = z.object({
   workspace_id: z.string().uuid(),
+});
+
+// Taxonomy janitor — rename a (domain, sub_category) pair across all notes
+// in the workspace. If `to` collapses onto an existing pair, the operation
+// is a merge; otherwise a rename. Same UPDATE either way.
+export const renameTaxonomyPairBody = z.object({
+  from: z.object({
+    domain: z.string().min(1).max(40),
+    sub_category: z.string().min(1).max(60),
+  }),
+  to: z.object({
+    domain: z.string().min(1).max(40),
+    sub_category: z.string().min(1).max(60),
+  }),
+});
+
+// Taxonomy janitor — rename a domain across ALL its sub-categories at once.
+export const renameTaxonomyDomainBody = z.object({
+  from_domain: z.string().min(1).max(40),
+  to_domain: z.string().min(1).max(40),
 });
 
 export const ragQueryBody = z.object({

@@ -51,7 +51,7 @@ export default async function ActivityPage() {
 
       <div className="mb-1 flex items-baseline justify-between">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">Activity</h1>
+          <h1>Activity</h1>
           <p className="mt-1 text-[13px] text-ink-mid">
             Every ingest, recategorize, and CC-session call writes one row here.
           </p>
@@ -79,18 +79,18 @@ export default async function ActivityPage() {
         <p className="mt-12 text-[14px] text-ink-mid">No activity yet.</p>
       )}
 
-      <div className="mt-8 space-y-10">
+      <div className="mt-10 space-y-10">
         {Array.from(byDay.entries()).map(([day, dayRows]) => (
           <section key={day}>
-            <div className="mb-2 flex items-baseline justify-between border-b border-hairline pb-2">
-              <h2 className="text-[12px] font-semibold uppercase tracking-wider text-ink">
+            <div className="mb-3 flex items-baseline justify-between border-b border-hairline-strong pb-2.5">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
                 {day}
               </h2>
-              <span className="text-[11px] text-ink-soft">
+              <span className="font-mono text-[11px] text-ink-soft">
                 {dayRows.length} event{dayRows.length === 1 ? "" : "s"}
               </span>
             </div>
-            <ul>
+            <ul className="divide-y divide-hairline">
               {dayRows.map((row) => (
                 <ActivityRow key={row.id} row={row} />
               ))}
@@ -121,10 +121,12 @@ function ActivityRow({ row }: { row: IngestLog }) {
   });
 
   return (
-    <li className="border-b border-hairline last:border-b-0">
+    <li>
       <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-4 py-3 hover:bg-bg-soft hover:-mx-3 hover:px-3 transition-[margin,padding]">
-          <span className="font-mono text-[11px] text-ink-soft w-12">{time}</span>
+        <summary className="flex cursor-pointer list-none items-center gap-5 rounded-sm px-2 py-3.5 -mx-2 hover:bg-bg-soft">
+          <span className="w-20 shrink-0 whitespace-nowrap font-mono text-[12px] text-ink-mid">
+            {time}
+          </span>
           <StatusBadge status={isInProgress ? "running" : row.status} />
           <span className="flex-1 text-[13px] text-ink">
             <span className="text-ink-mid">{row.mode}</span>
@@ -139,10 +141,10 @@ function ActivityRow({ row }: { row: IngestLog }) {
               </>
             )}
           </span>
-          <span className="font-mono text-[11px] text-ink-soft">
+          <span className="shrink-0 font-mono text-[11px] text-ink-soft">
             {isInProgress ? "pending" : row.model}
           </span>
-          <span className="text-ink-soft transition-transform group-open:rotate-90">
+          <span className="shrink-0 text-ink-soft transition-transform group-open:rotate-90">
             ›
           </span>
         </summary>
@@ -194,7 +196,7 @@ function StatusBadge({
   return (
     <span
       className={cn(
-        "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        "shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
         styles[status],
       )}
     >

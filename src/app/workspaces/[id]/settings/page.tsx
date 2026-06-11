@@ -43,7 +43,7 @@ export default async function WorkspaceSettingsPage({
       </Link>
 
       <header className="mt-4 mb-10">
-        <h1 className="text-[22px] font-semibold tracking-tight">{ws.name}</h1>
+        <h1>{ws.name}</h1>
         <p className="mt-1 text-[13px] text-ink-mid">
           You are {isOwner ? "the owner" : "a member"} of this workspace.
         </p>
@@ -79,6 +79,18 @@ export default async function WorkspaceSettingsPage({
           <InviteManager workspaceId={ws.id} />
         </section>
       )}
+
+      <section className="mb-10">
+        <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-ink-mid">
+          Taxonomy
+        </h2>
+        <Link
+          href={`/workspaces/${ws.id}/taxonomy`}
+          className="inline-block rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg-soft hover:text-ink"
+        >
+          {isOwner ? "Rename or merge sub-categories →" : "View taxonomy →"}
+        </Link>
+      </section>
 
       {isOwner && (
         <section>

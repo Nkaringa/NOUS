@@ -109,7 +109,13 @@ Output STRICT JSON only, no prose, no markdown fences:
 }
 ```
 
-### `DEFINER_PROMPT` v1.0
+### `DEFINER_PROMPT` v1.1
+
+Changes from v1.0: tighter technical-vs-non-technical decision rule (explicit
+domain list), explicit "code fence required for technical topics, prose
+example is a rejection". Backed by a one-shot retry in
+`src/lib/ingest/pipeline.ts` that re-prompts when a technical note returns
+without a fence.
 
 ```
 You are writing a teaching-quality micro-note for a personal learning system.
@@ -120,21 +126,37 @@ SUB_CATEGORY: {sub_category}
 OPTIONAL BODY: {body}
 
 Produce:
-1. A concise definition (≤120 words, markdown allowed). No filler, no
-   "this concept refers to" boilerplate. Lead with the meaning.
-2. ONE example:
-   - If the topic is technical (code, infrastructure, algorithms): a
-     runnable code snippet in a ```language fenced block, ≤25 lines,
-     copy-paste ready.
-   - Otherwise: a concrete real-world scenario (1-3 sentences) that
-     illustrates the concept in action.
+
+1. A concise definition (≤120 words, markdown allowed). Lead with the
+   meaning. No "this concept refers to" / "X is a term used for" filler.
+
+2. ONE example. The format depends on whether the topic is TECHNICAL or
+   NON-TECHNICAL:
+
+   TECHNICAL — anything with an executable / machine-checkable representation:
+   code, algorithms, data structures, APIs, protocols, queries, configuration,
+   commands, tools, languages, frameworks, infrastructure, network setups.
+   When DOMAIN is one of Technology, Engineering, Software, Networking,
+   Cloud, Data, Security, DevOps, Programming, AI, ML, Computer Science —
+   treat as TECHNICAL.
+
+   For TECHNICAL topics the example MUST be a runnable code/config snippet
+   inside a ```language fenced block, ≤25 lines, copy-paste ready.
+   Pick the language idiomatic to the topic (python, ts, sql, bash,
+   yaml, go, ...). A prose example here is a rejection — re-do as code.
+
+   NON-TECHNICAL — law, history, philosophy, business, media, art, social:
+   a concrete real-world scenario (1-3 sentences) that shows the concept
+   in action. No code fence.
+
 3. 3-8 key terms a reader should know to fully understand this note.
 
-Output STRICT JSON only, no prose, no markdown fences:
+Output STRICT JSON only — no prose before or after, no markdown fences
+wrapping the JSON object itself:
 
 {
   "definition_md": "string (markdown)",
-  "example_md": "string (markdown, may contain code fences)",
+  "example_md": "string — for TECHNICAL topics MUST contain a ``` fenced code block",
   "key_terms": ["string", ...]
 }
 ```

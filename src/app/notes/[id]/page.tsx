@@ -52,16 +52,17 @@ export default async function NoteDetailPage({
           </Link>
         </div>
 
-        <h1 className="font-serif text-[30px] font-medium leading-tight tracking-tight text-ink">
+        <h1 className="font-serif text-[32px] font-medium leading-tight tracking-tight text-ink">
           {note.heading}
         </h1>
-        <div className="mt-3 border-b border-hairline pb-4 text-[11px] text-ink-soft">
-          Ingested {new Date(note.created_at).toLocaleString()} · {note.source}
+        <div className="mt-3 border-b border-hairline pb-4 text-[12px] text-ink-mid">
+          Ingested {new Date(note.created_at).toLocaleString()} ·{" "}
+          <span className="font-mono">{note.source}</span>
         </div>
       </header>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-mid">
+        <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
           Definition
         </h2>
         <div className="font-serif text-[17px] leading-relaxed text-ink">
@@ -71,7 +72,7 @@ export default async function NoteDetailPage({
 
       {note.example_md && (
         <section className="mt-8">
-          <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-mid">
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
             Example
           </h2>
           <Markdown>{note.example_md}</Markdown>
@@ -80,7 +81,7 @@ export default async function NoteDetailPage({
 
       {note.body_md && (
         <section className="mt-8">
-          <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-mid">
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
             Original body
           </h2>
           <Markdown>{note.body_md}</Markdown>

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { parseHeadings, type ParsedHeading } from "@/lib/ingest/parse";
 import type { Note } from "@/lib/types";
@@ -12,6 +13,18 @@ type ItemState =
   | { status: "pending"; heading: string }
   | { status: "ok"; heading: string; note: Note }
   | { status: "failed"; heading: string; error: string };
+
+type DuplicatePrompt = {
+  heading: string;
+  body: string;
+  duplicate: {
+    id: string;
+    heading: string;
+    domain: string;
+    sub_category: string;
+    similarity: number;
+  };
+};
 
 // Each chunk is a separate /api/ingest call → a fresh function invocation
 // with its own 60s budget on Vercel Hobby. Chunks processed sequentially so
@@ -27,6 +40,8 @@ export function IngestForm() {
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "error">("idle");
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dupePrompt, setDupePrompt] = useState<DuplicatePrompt | null>(null);
+  const [showBody, setShowBody] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   function reset() {
@@ -35,20 +50,34 @@ export function IngestForm() {
     setError(null);
   }
 
-  async function submitSingle() {
+  async function submitSingle(opts?: { force?: boolean; heading?: string; body?: string }) {
+    const headingValue = (opts?.heading ?? input).trim();
+    const bodyValue = (opts?.body ?? body).trim();
     reset();
+    setDupePrompt(null);
     setPhase("running");
-    setItems([{ status: "pending", heading: input.trim() }]);
+    setItems([{ status: "pending", heading: headingValue }]);
     try {
       const res = await fetch("/api/ingest/single", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          heading: input.trim(),
-          body: body.trim() || undefined,
+          heading: headingValue,
+          body: bodyValue || undefined,
+          force: opts?.force ?? false,
         }),
       });
       const data = await res.json();
+      if (res.status === 409 && data.duplicate) {
+        setDupePrompt({
+          heading: headingValue,
+          body: bodyValue,
+          duplicate: data.duplicate,
+        });
+        setItems([]);
+        setPhase("idle");
+        return;
+      }
       if (!res.ok) throw new Error(data.error ?? "ingest failed");
       setItems([{ status: "ok", heading: data.heading, note: data as Note }]);
       setSummary("1 ingested");
@@ -56,7 +85,7 @@ export function IngestForm() {
       router.refresh();
     } catch (e) {
       const msg = (e as Error).message;
-      setItems([{ status: "failed", heading: input.trim(), error: msg }]);
+      setItems([{ status: "failed", heading: headingValue, error: msg }]);
       setError(msg);
       setPhase("error");
     }
@@ -233,7 +262,7 @@ export function IngestForm() {
       </div>
 
       {mode === "single" ? (
-        <>
+        <div className="space-y-2">
           <input
             type="text"
             value={input}
@@ -242,15 +271,39 @@ export function IngestForm() {
             disabled={isRunning}
             className="w-full rounded border border-hairline-strong bg-bg-input px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-soft focus:border-ink disabled:opacity-50"
           />
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Optional body / context (markdown ok)"
-            rows={4}
-            disabled={isRunning}
-            className="w-full rounded border border-hairline-strong bg-bg-input px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-soft focus:border-ink disabled:opacity-50"
-          />
-        </>
+          {showBody || body.trim() ? (
+            <div className="space-y-1.5">
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Context, source material, or your own draft. Markdown ok."
+                rows={4}
+                disabled={isRunning}
+                className="w-full rounded border border-hairline-strong bg-bg-input px-3 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-soft focus:border-ink disabled:opacity-50"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setBody("");
+                  setShowBody(false);
+                }}
+                disabled={isRunning}
+                className="text-[11px] text-ink-soft hover:text-ink-mid disabled:opacity-50"
+              >
+                − Remove body
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowBody(true)}
+              disabled={isRunning}
+              className="text-[12px] text-ink-mid hover:text-ink disabled:opacity-50"
+            >
+              + Add body / context
+            </button>
+          )}
+        </div>
       ) : (
         <>
           <textarea
@@ -270,7 +323,7 @@ export function IngestForm() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={mode === "single" ? submitSingle : submitBulk}
+          onClick={() => (mode === "single" ? submitSingle() : submitBulk())}
           disabled={isRunning || !input.trim()}
           className="rounded bg-red px-4 py-2 text-[13px] font-medium text-white hover:bg-red-deep disabled:opacity-50"
         >
@@ -293,6 +346,56 @@ export function IngestForm() {
         </div>
       )}
 
+      {dupePrompt && (
+        <div className="rounded border border-hairline-strong bg-bg-soft p-4">
+          <div className="text-[12px] font-medium uppercase tracking-wider text-ink-mid">
+            Possible duplicate
+          </div>
+          <p className="mt-2 text-[13px] text-ink">
+            You may already have a note about this — it&apos;s{" "}
+            <span className="font-medium">
+              {Math.round(dupePrompt.duplicate.similarity * 100)}%
+            </span>{" "}
+            similar to:
+          </p>
+          <div className="mt-2 rounded border border-hairline bg-bg p-3">
+            <Link
+              href={`/notes/${dupePrompt.duplicate.id}`}
+              className="text-[14px] font-medium text-ink hover:text-red"
+            >
+              {dupePrompt.duplicate.heading}
+            </Link>
+            <div className="mt-1 text-[11px] text-ink-mid">
+              {dupePrompt.duplicate.domain}{" "}
+              <span className="text-ink-soft">/</span>{" "}
+              <span className="text-red">{dupePrompt.duplicate.sub_category}</span>
+            </div>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                submitSingle({
+                  force: true,
+                  heading: dupePrompt.heading,
+                  body: dupePrompt.body,
+                })
+              }
+              className="rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg hover:text-ink"
+            >
+              Insert anyway
+            </button>
+            <button
+              type="button"
+              onClick={() => setDupePrompt(null)}
+              className="rounded border border-hairline-strong px-3 py-1.5 text-[12px] text-ink-mid hover:bg-bg hover:text-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {(items.length > 0 || summary) && (
         <div className="space-y-2 pt-2">
           {summary && (
@@ -305,28 +408,57 @@ export function IngestForm() {
               continues server-side.
             </div>
           )}
-          <ul className="rounded border border-hairline">
-            {items.map((it, i) => (
-              <li
-                key={i}
-                className="flex items-center gap-3 border-b border-hairline px-3 py-2 last:border-b-0"
-              >
-                <StatusDot status={it.status} />
-                <span className="flex-1 truncate text-[13px] text-ink">{it.heading}</span>
-                {it.status === "ok" && (
-                  <span className="text-[11px] text-ink-mid">
-                    {it.note.domain} <span className="text-ink-soft">/</span>{" "}
-                    <span className="text-red">{it.note.sub_category}</span>
+          <div className="overflow-hidden rounded border border-hairline">
+            {items.map((it, i) =>
+              it.status === "ok" ? (
+                <Link
+                  key={i}
+                  href={`/notes/${it.note.id}`}
+                  className="group flex items-start gap-3 border-b border-hairline px-3 py-2.5 last:border-b-0 hover:bg-bg-soft"
+                >
+                  <span className="mt-1.5 shrink-0">
+                    <StatusDot status={it.status} />
                   </span>
-                )}
-                {it.status === "failed" && (
-                  <span className="truncate text-[11px] text-red-deep" title={it.error}>
-                    {it.error}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-[13px] font-medium text-ink">
+                        {it.heading}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-ink-mid">
+                        {it.note.domain}{" "}
+                        <span className="text-ink-soft">/</span>{" "}
+                        <span className="text-red">{it.note.sub_category}</span>
+                      </span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-ink-mid">
+                      {stripMarkdown(it.note.definition_md)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 self-center text-[11px] text-ink-soft opacity-0 transition-opacity group-hover:opacity-100">
+                    View →
                   </span>
-                )}
-              </li>
-            ))}
-          </ul>
+                </Link>
+              ) : (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 border-b border-hairline px-3 py-2.5 last:border-b-0"
+                >
+                  <StatusDot status={it.status} />
+                  <span className="flex-1 truncate text-[13px] text-ink">
+                    {it.heading}
+                  </span>
+                  {it.status === "failed" && (
+                    <span
+                      className="truncate text-[11px] text-red-deep"
+                      title={it.error}
+                    >
+                      {it.error}
+                    </span>
+                  )}
+                </div>
+              ),
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -364,6 +496,21 @@ function ParsePreview({ input, disabled }: { input: string; disabled: boolean })
       </ol>
     </div>
   );
+}
+
+// Cheap markdown → plain-text for the preview line. Drops headers,
+// list markers, bold/italic markers, and inline code backticks so the
+// snippet reads cleanly when truncated to two lines.
+function stripMarkdown(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#+\s+/gm, "")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function StatusDot({ status }: { status: ItemState["status"] }) {

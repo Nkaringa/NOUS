@@ -67,8 +67,11 @@ export async function Nav() {
     <header className="sticky top-0 z-10 border-b border-hairline bg-bg">
       <div className="mx-auto flex max-w-[1100px] items-center justify-between gap-4 px-8 py-3.5">
         <div className="flex items-center gap-4">
-          <Link href="/" className="text-[15px] font-semibold tracking-wide">
-            <span className="mr-1 text-red">●</span>NOUS
+          <Link
+            href="/"
+            className="text-[15px] font-semibold tracking-wide text-ink outline-none focus-visible:ring-2 focus-visible:ring-red/40 rounded"
+          >
+            NOUS
           </Link>
           {user && (
             <WorkspaceSwitcher workspaces={workspaces} activeId={activeId} />
@@ -85,7 +88,7 @@ export async function Nav() {
           <form action="/auth/signout" method="post">
             <button
               type="submit"
-              className="text-xs text-ink-soft hover:text-ink"
+              className="text-[12px] text-ink-mid hover:text-ink outline-none focus-visible:ring-2 focus-visible:ring-red/40 rounded px-1"
             >
               Sign out
             </button>
@@ -100,7 +103,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
   return (
     <Link
       href={href}
-      className="rounded px-3 py-1.5 text-[13px] text-ink-mid hover:bg-bg-soft hover:text-ink"
+      className="rounded px-3 py-1.5 text-[13px] font-medium text-ink-mid outline-none transition-colors hover:bg-bg-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-red/40"
     >
       {children}
     </Link>

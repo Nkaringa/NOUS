@@ -7,7 +7,13 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withJsonSchema, embedText } from "@/lib/llm";
-import { categorizerPrompt, definerPrompt } from "@/lib/llm/prompts";
+import {
+  categorizerPrompt,
+  definerPrompt,
+  definerRetryPrompt,
+  hasCodeFence,
+  isTechnicalDomain,
+} from "@/lib/llm/prompts";
 import { categorizerSchema, definerSchema } from "@/lib/zod-schemas";
 import {
   fetchTaxonomySnapshot,
@@ -19,6 +25,101 @@ import type { Note, NoteSource, TaxonomySnapshot } from "@/lib/types";
 export type IngestItemResult =
   | { ok: true; note: Note; modelsUsed: string[] }
   | { ok: false; heading: string; error: string };
+
+export type NearDuplicate = {
+  id: string;
+  heading: string;
+  domain: string;
+  sub_category: string;
+  similarity: number;
+};
+
+/**
+ * Cosine-similarity threshold for the vector-based near-duplicate check.
+ * Lower than you'd expect (0.85) because existing notes are embedded as
+ * "heading + definition_md" but the dupe check embeds the new heading
+ * alone — heading-vs-(heading+def) lands around 0.7-0.9 even for clear
+ * matches. The case-insensitive string match below catches exact restates;
+ * vector kicks in for fuzzy ones like "BGP" vs "BGP convergence".
+ */
+export const DUPLICATE_THRESHOLD = 0.85;
+
+/**
+ * Look up the most-similar existing note in the workspace.
+ *
+ * Two checks in order:
+ *   1. Case-insensitive exact match on heading (after trim). Returns
+ *      similarity = 1.0 — catches "SHIM VPC" vs "shim VPC" cleanly without
+ *      depending on embedding quality.
+ *   2. Vector similarity via the existing search_notes_vec RPC. Catches
+ *      fuzzy near-restates where the wording differs.
+ *
+ * Returns null if neither check turns up anything past the threshold.
+ */
+export async function findNearDuplicate(args: {
+  supabase: SupabaseClient;
+  workspaceId: string;
+  heading: string;
+}): Promise<NearDuplicate | null> {
+  const { supabase, workspaceId, heading } = args;
+  const trimmed = heading.trim();
+  if (!trimmed) return null;
+
+  // 1. Case-insensitive exact match on heading. Escape ilike's wildcards
+  //    (% and _) so headings containing them ("100% renewable") still
+  //    match exactly instead of acting as a pattern.
+  const ilikePattern = trimmed.replace(/[\\%_]/g, "\\$&");
+  const { data: exactMatches } = await supabase
+    .from("notes")
+    .select("id, heading, domain, sub_category")
+    .eq("workspace_id", workspaceId)
+    .ilike("heading", ilikePattern)
+    .limit(1);
+  const exact = (exactMatches ?? [])[0];
+  if (exact) {
+    return {
+      id: exact.id as string,
+      heading: exact.heading as string,
+      domain: exact.domain as string,
+      sub_category: exact.sub_category as string,
+      similarity: 1.0,
+    };
+  }
+
+  // 2. Vector similarity.
+  let embedding: number[];
+  try {
+    embedding = await embedText(trimmed);
+  } catch {
+    return null;
+  }
+  if (embedding.length === 0) return null;
+
+  const { data, error } = await supabase.rpc("search_notes_vec", {
+    p_workspace_id: workspaceId,
+    p_embedding: embedding,
+    p_k: 1,
+  });
+  if (error) return null;
+  const rows = (data ?? []) as Array<{ id: string; similarity: number }>;
+  const top = rows[0];
+  if (!top || top.similarity < DUPLICATE_THRESHOLD) return null;
+
+  const { data: noteRow } = await supabase
+    .from("notes")
+    .select("id, heading, domain, sub_category")
+    .eq("id", top.id)
+    .maybeSingle();
+  if (!noteRow) return null;
+
+  return {
+    id: noteRow.id as string,
+    heading: noteRow.heading as string,
+    domain: noteRow.domain as string,
+    sub_category: noteRow.sub_category as string,
+    similarity: top.similarity,
+  };
+}
 
 export async function ingestHeading(args: {
   supabase: SupabaseClient;
@@ -59,7 +160,7 @@ export async function ingestHeading(args: {
     }
 
     // 2. Define + exemplify.
-    const def = await withJsonSchema({
+    let def = await withJsonSchema({
       prompt: definerPrompt({ heading, domain, sub_category, body }),
       schema: definerSchema,
       toolName: "submit_definition",
@@ -67,6 +168,30 @@ export async function ingestHeading(args: {
       maxTokens: 1500,
     });
     modelsUsed.push(def.model);
+
+    // Technical-topic retry: if the domain is technical but the example has
+    // no ``` fence, run definer once more with a stricter follow-up prompt.
+    // Don't block the whole ingest if the retry also fails — accept the
+    // best output we got.
+    if (isTechnicalDomain(domain) && !hasCodeFence(def.data.example_md)) {
+      const retry = await withJsonSchema({
+        prompt: definerRetryPrompt({
+          heading,
+          domain,
+          sub_category,
+          body,
+          rejected_example_md: def.data.example_md,
+        }),
+        schema: definerSchema,
+        toolName: "submit_definition",
+        description: "Re-submit with a fenced code block in example_md.",
+        maxTokens: 1500,
+      });
+      modelsUsed.push(retry.model);
+      if (hasCodeFence(retry.data.example_md)) {
+        def = retry;
+      }
+    }
 
     // 3. Embed.
     const embedding = await embedText(`${heading}\n\n${def.data.definition_md}`);

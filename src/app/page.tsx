@@ -51,9 +51,7 @@ export default async function HomePage() {
     <main className="mx-auto max-w-[1100px] px-8 py-10">
       <div className="mb-8 flex items-baseline justify-between">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight">
-            {workspaceName}
-          </h1>
+          <h1>{workspaceName}</h1>
           <p className="mt-1 text-[13px] text-ink-mid">
             Signed in as {user.email}
           </p>
@@ -91,7 +89,7 @@ export default async function HomePage() {
                         <span className="text-red">{n.sub_category}</span>
                       </div>
                     </div>
-                    <div className="font-mono text-[11px] text-ink-soft">
+                    <div className="font-mono text-[11px] text-ink-mid">
                       {formatRelative(n.created_at)}
                     </div>
                   </Link>
@@ -135,7 +133,7 @@ export default async function HomePage() {
                   key={r.id}
                   className="grid grid-cols-[50px_1fr_auto] items-baseline gap-3 border-b border-hairline py-2.5 text-[12px]"
                 >
-                  <span className="font-mono text-[11px] text-ink-soft">
+                  <span className="font-mono text-[11px] text-ink-mid">
                     {formatTime(r.created_at)}
                   </span>
                   <span className="text-ink">
@@ -164,11 +162,11 @@ function SectionHeader({
   link?: { href: string; label: string };
 }) {
   return (
-    <div className="mb-1 flex items-baseline justify-between border-b border-hairline py-2">
-      <span className="text-[12px] font-semibold uppercase tracking-wider text-ink">
+    <div className="mb-1 flex items-baseline justify-between border-b border-hairline-strong py-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
         {title}
       </span>
-      <span className="text-[11px] text-ink-soft">
+      <span className="text-[11px] text-ink-mid">
         {meta}
         {link && (
           <>

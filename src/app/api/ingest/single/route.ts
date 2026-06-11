@@ -4,7 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { ingestSingleBody } from "@/lib/zod-schemas";
-import { ingestBatch } from "@/lib/ingest/pipeline";
+import { ingestBatch, findNearDuplicate } from "@/lib/ingest/pipeline";
 import { resolveWorkspaceId } from "@/lib/workspaces/active";
 
 export const runtime = "nodejs";
@@ -40,6 +40,22 @@ export async function POST(request: NextRequest) {
       { error: "no workspace available" },
       { status: 403 },
     );
+  }
+
+  // Pre-check: if the user hasn't acknowledged a duplicate yet, look for a
+  // near-identical existing note and bail out so the UI can prompt.
+  if (!parsed.data.force) {
+    const duplicate = await findNearDuplicate({
+      supabase,
+      workspaceId,
+      heading: parsed.data.heading,
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        { error: "duplicate", duplicate },
+        { status: 409 },
+      );
+    }
   }
 
   const { results, modelsUsed } = await ingestBatch({
