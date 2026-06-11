@@ -1,5 +1,7 @@
-// GET  /api/workspaces — list workspaces the current user belongs to (with counts)
-// POST /api/workspaces — create a new workspace; current user becomes owner + member
+// GET  /api/workspaces — list workspaces the caller belongs to (with counts).
+//   Dual auth: cookie session OR bearer NOUS_INGEST_TOKEN (used by the
+//   cc-session skill, which scopes to NOUS_INGEST_USER_ID).
+// POST /api/workspaces — create a new workspace; current user becomes owner + member.
 
 import type { NextRequest } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -7,16 +9,34 @@ import { createWorkspaceBody } from "@/lib/zod-schemas";
 
 export const runtime = "nodejs";
 
-export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+export async function GET(request: NextRequest) {
+  const auth = request.headers.get("authorization") ?? "";
+  const bearerToken = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+
+  let userId: string;
+  let supabase;
+  if (bearerToken && bearerToken === process.env.NOUS_INGEST_TOKEN) {
+    const ccUserId = process.env.NOUS_INGEST_USER_ID;
+    if (!ccUserId) {
+      return Response.json(
+        { error: "NOUS_INGEST_USER_ID not configured" },
+        { status: 503 },
+      );
+    }
+    userId = ccUserId;
+    supabase = createServiceClient();
+  } else {
+    supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return Response.json({ error: "unauthorized" }, { status: 401 });
+    userId = user.id;
+  }
 
   // 1. Memberships for this user.
   const { data: memberRows, error: memErr } = await supabase
     .from("workspace_members")
     .select("workspace_id, role, joined_at")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .order("joined_at", { ascending: true });
   if (memErr) return Response.json({ error: memErr.message }, { status: 500 });
 

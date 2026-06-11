@@ -92,6 +92,40 @@ Build the per-item object:
   "confidence": 0.85 }
 ```
 
+## Resolving target workspace (do this BEFORE step 1 categorize)
+
+NOUS now scopes every note to a workspace. The cc-session route REQUIRES `workspace_id` in the request body. To pick the right one:
+
+1. **Fetch available workspaces** for the cc-session user:
+   ```http
+   GET {NOUS_API_URL}/api/workspaces
+   Authorization: Bearer {NOUS_INGEST_TOKEN}
+   ```
+   Returns `{ workspaces: [{ id, name, role, member_count, ... }] }`.
+
+2. **Decide which workspace** the user means, in this priority:
+   - **Natural-language mention** in the user's invocation. Match patterns like *"ingest X into tech bros"*, *"add Y to the anime club workspace"*, *"... in personal"*. Case-insensitive, substring-match against `name`. If unambiguous → use it.
+   - **Single workspace** — if the user has only one workspace, use it silently (no prompt). Most users start here with just "Personal".
+   - **Multiple workspaces, no mention** — prompt the user with a numbered list:
+     > Which workspace?
+     >   1. Personal (just you, 13 notes)
+     >   2. Tech Bros (3 members, 47 notes)
+     >   3. Anime Club (2 members, 8 notes)
+   - User responds with number or name → use that.
+
+3. **Carry `workspace_id`** through the rest of the pipeline (taxonomy fetch + insert). Each note ingested in this batch goes to the same workspace — no per-item workspace selection.
+
+## Fetching the taxonomy snapshot (workspace-scoped)
+
+After resolving workspace, fetch its taxonomy for the categorizer to use:
+
+```http
+GET {NOUS_API_URL}/api/taxonomy?workspace_id={WORKSPACE_ID}
+Authorization: Bearer {NOUS_INGEST_TOKEN}
+```
+
+Returns `{ tree, flat }`. Use `flat` as the categorizer's "EXISTING TAXONOMY" snapshot. If the call fails or returns empty, pass `{}` — the server will normalize on insert.
+
 ## Output paths
 
 Decide based on environment:
@@ -103,7 +137,10 @@ POST {NOUS_API_URL}/api/ingest/cc-session
 Authorization: Bearer {NOUS_INGEST_TOKEN}
 Content-Type: application/json
 
-{ "items": [ ...assembled items... ] }
+{
+  "workspace_id": "{resolved workspace id}",
+  "items": [ ...assembled items... ]
+}
 ```
 
 ### Resolving `NOUS_API_URL` + `NOUS_INGEST_TOKEN`
@@ -162,6 +199,7 @@ For batches > 5 items, show a one-line preview per item:
 
 1. **Resolve config** — walk the `~/.nous/.env` → `./.env` → shell env → ask chain (see *Path A* above). Confirm `NOUS_API_URL` + `NOUS_INGEST_TOKEN` are both set before continuing.
 2. **Confirm target environment** with the user when ambiguous — e.g., if `~/.nous/.env` points to PROD but `./.env` also exists pointing to DEV. A one-line "ingesting to PROD (`https://nous.karinga.dev`) — confirm?" is enough.
+3. **Resolve target workspace** (see *Resolving target workspace* above) — fetch list, detect mention or prompt. The workspace_id is now REQUIRED in the cc-session POST body.
 3. **Read prompts** — if a project `.claude/CLAUDE.md` exists in the CWD, read Part C for the canonical CATEGORIZER and DEFINER prompts. If not (skill invoked outside the repo), the prompts below in this file's *Processing pipeline* section describe the contract; follow those.
 4. **Fetch taxonomy** via `GET {NOUS_API_URL}/api/taxonomy` to seed the categorizer. Empty `{}` is fine if the call fails.
 5. **Confirm batch size** — if parsing > 20 items, ask the user to confirm before proceeding. Token cost and wall time scale linearly.
@@ -192,4 +230,8 @@ For batches > 5 items, show a one-line preview per item:
    BGP convergence
    Article 21 of Indian Constitution
 /nous-ingest "Narrative pacing in Frieren"
+/nous-ingest BGP convergence, ACID transactions into tech bros
+/nous-ingest "Luffy's Gear 5" in anime club
 ```
+
+The last two forms show natural-language workspace mention — the skill matches the workspace name from input and uses it without prompting.
