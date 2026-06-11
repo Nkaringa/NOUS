@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { IngestForm } from "@/components/IngestForm";
 
-export default function IngestPage() {
+export default async function IngestPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ heading?: string }>;
+}) {
+  const { heading } = await searchParams;
   return (
     <main className="mx-auto max-w-[820px] px-8 py-10">
       <div className="mb-8 flex items-baseline justify-between">
@@ -16,7 +21,7 @@ export default function IngestPage() {
           View activity log →
         </Link>
       </div>
-      <IngestForm />
+      <IngestForm initialHeading={heading} />
     </main>
   );
 }

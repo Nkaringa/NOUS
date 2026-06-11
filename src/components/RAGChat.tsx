@@ -32,11 +32,13 @@ export function RAGChat({
   initialMessages,
   noteCount,
   chatCount,
+  initialQuestion,
 }: {
   sessionId: string | null;
   initialMessages: ChatMessage[];
   noteCount?: number;
   chatCount?: number;
+  initialQuestion?: string;
 }) {
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -44,6 +46,7 @@ export function RAGChat({
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const autoSentRef = useRef(false);
 
   useEffect(() => {
     scrollerRef.current?.scrollTo({
@@ -52,8 +55,18 @@ export function RAGChat({
     });
   }, [messages]);
 
-  async function send() {
-    const question = input.trim();
+  // Auto-send a question passed via ?q= (from the dashboard capture bar).
+  // Fires once; the ref guards against React strict-mode double-invoke.
+  useEffect(() => {
+    if (initialQuestion && !autoSentRef.current) {
+      autoSentRef.current = true;
+      void send(initialQuestion);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion]);
+
+  async function send(explicitQuestion?: string) {
+    const question = (explicitQuestion ?? input).trim();
     if (!question || running) return;
 
     setInput("");
@@ -206,7 +219,7 @@ export function RAGChat({
           </span>
           <button
             type="button"
-            onClick={send}
+            onClick={() => send()}
             disabled={running || !input.trim()}
             className="rounded bg-red px-4 py-1.5 text-[13px] font-medium text-white hover:bg-red-deep disabled:opacity-50"
           >

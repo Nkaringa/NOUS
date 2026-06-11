@@ -31,10 +31,10 @@ type DuplicatePrompt = {
 // taxonomy snapshots stay coherent across the submission.
 const CHUNK_SIZE = 2;
 
-export function IngestForm() {
+export function IngestForm({ initialHeading }: { initialHeading?: string }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("single");
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(initialHeading ?? "");
   const [body, setBody] = useState("");
   const [items, setItems] = useState<ItemState[]>([]);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "error">("idle");
