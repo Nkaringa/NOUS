@@ -29,11 +29,14 @@ export async function updateSession(request: NextRequest) {
   // the return — the response object must remain unmodified.
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Redirect unauthed users away from protected paths.
+  // Redirect unauthed users away from protected paths. API routes are exempt:
+  // they support bearer auth (cc-session skill) and should return their own
+  // 401 JSON when unauthorized, not a 307 redirect to /login.
   const path = request.nextUrl.pathname;
   const isPublic =
     path === "/login" ||
     path.startsWith("/auth/") ||
+    path.startsWith("/api/") ||
     path.startsWith("/_next") ||
     path === "/favicon.ico";
 
