@@ -7,7 +7,13 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withJsonSchema, embedText } from "@/lib/llm";
-import { categorizerPrompt, definerPrompt } from "@/lib/llm/prompts";
+import {
+  categorizerPrompt,
+  definerPrompt,
+  definerRetryPrompt,
+  hasCodeFence,
+  isTechnicalDomain,
+} from "@/lib/llm/prompts";
 import { categorizerSchema, definerSchema } from "@/lib/zod-schemas";
 import {
   fetchTaxonomySnapshot,
@@ -59,7 +65,7 @@ export async function ingestHeading(args: {
     }
 
     // 2. Define + exemplify.
-    const def = await withJsonSchema({
+    let def = await withJsonSchema({
       prompt: definerPrompt({ heading, domain, sub_category, body }),
       schema: definerSchema,
       toolName: "submit_definition",
@@ -67,6 +73,30 @@ export async function ingestHeading(args: {
       maxTokens: 1500,
     });
     modelsUsed.push(def.model);
+
+    // Technical-topic retry: if the domain is technical but the example has
+    // no ``` fence, run definer once more with a stricter follow-up prompt.
+    // Don't block the whole ingest if the retry also fails — accept the
+    // best output we got.
+    if (isTechnicalDomain(domain) && !hasCodeFence(def.data.example_md)) {
+      const retry = await withJsonSchema({
+        prompt: definerRetryPrompt({
+          heading,
+          domain,
+          sub_category,
+          body,
+          rejected_example_md: def.data.example_md,
+        }),
+        schema: definerSchema,
+        toolName: "submit_definition",
+        description: "Re-submit with a fenced code block in example_md.",
+        maxTokens: 1500,
+      });
+      modelsUsed.push(retry.model);
+      if (hasCodeFence(retry.data.example_md)) {
+        def = retry;
+      }
+    }
 
     // 3. Embed.
     const embedding = await embedText(`${heading}\n\n${def.data.definition_md}`);

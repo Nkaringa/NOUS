@@ -6,7 +6,7 @@ import type { TaxonomySnapshot } from "@/lib/types";
 
 export const PROMPT_VERSIONS = {
   categorizer: "v1.0",
-  definer: "v1.0",
+  definer: "v1.1",
   taxonomy_normalizer: "v1.0",
   rag_answer: "v1.0",
 } as const;
@@ -59,23 +59,107 @@ SUB_CATEGORY: ${args.sub_category}
 OPTIONAL BODY: ${args.body ?? "(none)"}
 
 Produce:
-1. A concise definition (≤120 words, markdown allowed). No filler, no
-   "this concept refers to" boilerplate. Lead with the meaning.
-2. ONE example:
-   - If the topic is technical (code, infrastructure, algorithms): a
-     runnable code snippet in a \`\`\`language fenced block, ≤25 lines,
-     copy-paste ready.
-   - Otherwise: a concrete real-world scenario (1-3 sentences) that
-     illustrates the concept in action.
+
+1. A concise definition (≤120 words, markdown allowed). Lead with the
+   meaning. No "this concept refers to" / "X is a term used for" filler.
+
+2. ONE example. The format depends on whether the topic is TECHNICAL or
+   NON-TECHNICAL:
+
+   TECHNICAL — anything with an executable / machine-checkable representation:
+   code, algorithms, data structures, APIs, protocols, queries, configuration,
+   commands, tools, languages, frameworks, infrastructure, network setups.
+   When DOMAIN is one of Technology, Engineering, Software, Networking,
+   Cloud, Data, Security, DevOps, Programming, AI, ML, Computer Science —
+   treat as TECHNICAL.
+
+   For TECHNICAL topics the example MUST be a runnable code/config snippet
+   inside a \`\`\`language fenced block, ≤25 lines, copy-paste ready.
+   Pick the language idiomatic to the topic (python, ts, sql, bash,
+   yaml, go, ...). A prose example here is a rejection — re-do as code.
+
+   NON-TECHNICAL — law, history, philosophy, business, media, art, social:
+   a concrete real-world scenario (1-3 sentences) that shows the concept
+   in action. No code fence.
+
 3. 3-8 key terms a reader should know to fully understand this note.
 
-Output STRICT JSON only, no prose, no markdown fences:
+Output STRICT JSON only — no prose before or after, no markdown fences
+wrapping the JSON object itself:
 
 {
   "definition_md": "string (markdown)",
-  "example_md": "string (markdown, may contain code fences)",
+  "example_md": "string — for TECHNICAL topics MUST contain a \`\`\` fenced code block",
   "key_terms": ["string", ...]
 }`;
+}
+
+/**
+ * Follow-up prompt sent when the first definer call returned a technical
+ * note without a code fence. We quote back the rejected output so the
+ * model can see exactly what failed.
+ */
+export function definerRetryPrompt(args: {
+  heading: string;
+  domain: string;
+  sub_category: string;
+  body?: string | null;
+  rejected_example_md: string;
+}): string {
+  return `You previously wrote a micro-note for the following heading but the
+example_md field was REJECTED because the topic is technical and the
+example does not contain a \`\`\` fenced code block.
+
+HEADING: ${args.heading}
+DOMAIN: ${args.domain}
+SUB_CATEGORY: ${args.sub_category}
+OPTIONAL BODY: ${args.body ?? "(none)"}
+
+REJECTED example_md:
+"""
+${args.rejected_example_md}
+"""
+
+Produce the note again. The example_md MUST be a runnable code or config
+snippet inside a \`\`\`language fenced block, ≤25 lines. Pick the language
+idiomatic to the topic. Definition rules unchanged: ≤120 words, lead with
+the meaning.
+
+Output STRICT JSON only:
+
+{
+  "definition_md": "string (markdown)",
+  "example_md": "string — MUST contain a \`\`\` fenced code block",
+  "key_terms": ["string", ...]
+}`;
+}
+
+/**
+ * Domains the categorizer settles on for technical topics. Used to decide
+ * whether to enforce the code-fence rule. Keep aligned with the list in
+ * definerPrompt's body so prompt + post-check agree.
+ */
+export const TECHNICAL_DOMAINS = new Set([
+  "technology",
+  "engineering",
+  "software",
+  "networking",
+  "cloud",
+  "data",
+  "security",
+  "devops",
+  "programming",
+  "ai",
+  "ml",
+  "computer science",
+]);
+
+export function isTechnicalDomain(domain: string): boolean {
+  return TECHNICAL_DOMAINS.has(domain.trim().toLowerCase());
+}
+
+export function hasCodeFence(text: string): boolean {
+  return /```[\s\S]*?```/.test(text);
 }
 
 export function taxonomyNormalizerPrompt(args: {
