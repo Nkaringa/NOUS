@@ -89,10 +89,11 @@ export async function POST(request: NextRequest) {
 
   let cumulativeStart = 0;
   let existingErrorBlock = "";
+  let existingNoteIds: string[] = [];
   if (logId) {
     const { data: existing } = await svc
       .from("ingest_log")
-      .select("user_id, workspace_id, parsed_count, error")
+      .select("user_id, workspace_id, parsed_count, error, note_ids")
       .eq("id", logId)
       .maybeSingle();
     if (!existing || existing.user_id !== user.id || existing.workspace_id !== workspaceId) {
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
     }
     cumulativeStart = existing.parsed_count ?? 0;
     existingErrorBlock = existing.error ?? "";
+    existingNoteIds = (existing.note_ids as string[] | null) ?? [];
   } else {
     const rawInput = items
       .map((it, i) => (it.body ? `# ${it.heading}\n${it.body}` : `${i + 1}. ${it.heading}`))
@@ -140,6 +142,7 @@ export async function POST(request: NextRequest) {
 
         let chunkSucceeded = 0;
         const newErrorLines: string[] = [];
+        const chunkNoteIds: string[] = [];
 
         const { results, modelsUsed } = await ingestBatch({
           supabase,
@@ -150,6 +153,7 @@ export async function POST(request: NextRequest) {
           onProgress: async ({ index, total, result }) => {
             if (result.ok) {
               chunkSucceeded++;
+              chunkNoteIds.push(result.note.id);
               emit({ type: "item", index, total, ok: true, note: result.note });
             } else {
               newErrorLines.push(`${result.heading}: ${result.error}`);
@@ -191,9 +195,11 @@ export async function POST(request: NextRequest) {
               : "failed";
 
         if (logId) {
+          const allNoteIds = [...existingNoteIds, ...chunkNoteIds];
           const updatePayload: Record<string, unknown> = {
             parsed_count: totalSucceededSoFar,
             error: combinedErr || null,
+            note_ids: allNoteIds.length > 0 ? allNoteIds : null,
           };
           if (isLastChunk) {
             updatePayload.status = finalStatus;

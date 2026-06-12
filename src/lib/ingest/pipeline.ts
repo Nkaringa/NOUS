@@ -209,9 +209,11 @@ export async function ingestHeading(args: {
         domain,
         sub_category,
         source,
+        confidence: cat.data.confidence,
+        key_terms: def.data.key_terms,
         embedding,
       })
-      .select("id, user_id, workspace_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at")
+      .select("id, user_id, workspace_id, heading, body_md, definition_md, example_md, domain, sub_category, source, confidence, key_terms, created_at, updated_at")
       .single();
 
     if (insertErr || !inserted) {

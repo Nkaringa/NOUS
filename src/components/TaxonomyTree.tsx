@@ -7,9 +7,13 @@ type Props = {
   tree: TaxonomyTreeData;
   activeDomain?: string;
   activeSub?: string;
+  needsReview?: number;
 };
 
-export function TaxonomyTree({ tree, activeDomain, activeSub }: Props) {
+// Flat typographic index — mono counts, red-bar active state, domain rows
+// bold, sub rows indented. The needs-review chip surfaces Uncategorized
+// notes for cleanup.
+export function TaxonomyTree({ tree, activeDomain, activeSub, needsReview }: Props) {
   const sumCounts = (subs: Record<string, number>): number => {
     let total = 0;
     for (const v of Object.values(subs)) total += v;
@@ -38,25 +42,25 @@ export function TaxonomyTree({ tree, activeDomain, activeSub }: Props) {
 
   return (
     <nav>
-      <div className="mb-4 text-[11px] font-medium uppercase tracking-wider text-ink-mid">
+      <div className="mb-3.5 text-[10.5px] font-bold uppercase tracking-[.14em] text-ink-soft">
         Index
       </div>
       <Link
         href="/notes"
         className={cn(
-          "-mx-2 mb-3 flex items-baseline justify-between rounded px-2 py-1.5 text-[13px]",
+          "flex items-baseline justify-between py-[5px] text-[13.5px]",
           !activeDomain
-            ? "bg-bg-soft font-medium text-ink"
-            : "text-ink-mid hover:bg-bg-soft hover:text-ink",
+            ? "font-semibold text-ink"
+            : "text-ink-mid hover:text-ink",
         )}
       >
         <span>All notes</span>
-        <span className="text-[11px] text-ink-soft">{total}</span>
+        <span className="font-mono text-[11px] text-ink-soft">{total}</span>
       </Link>
 
       {domains.map(([domain, subs]) => {
-        const sub_total = sumCounts(subs);
-        const isActive = activeDomain === domain;
+        const subTotal = sumCounts(subs);
+        const isDomainActive = activeDomain === domain && !activeSub;
         const subEntries: Array<[string, number]> = [];
         for (const sub of Object.keys(subs)) {
           const c = subs[sub];
@@ -64,14 +68,22 @@ export function TaxonomyTree({ tree, activeDomain, activeSub }: Props) {
         }
         subEntries.sort(([, a], [, b]) => b - a);
         return (
-          <div key={domain} className="mb-3">
-            <div className="flex items-baseline justify-between py-1 text-[12px] font-semibold text-ink">
+          <div key={domain}>
+            <Link
+              href={{ pathname: "/notes", query: { domain } }}
+              className={cn(
+                "mt-4 flex items-baseline justify-between py-[5px] text-[13.5px] font-semibold",
+                isDomainActive ? "text-red" : "text-ink hover:text-red",
+              )}
+            >
               <span>{domain}</span>
-              <span className="text-[11px] font-normal text-ink-soft">{sub_total}</span>
-            </div>
+              <span className="font-mono text-[11px] font-normal text-ink-soft">
+                {subTotal}
+              </span>
+            </Link>
             <ul>
               {subEntries.map(([sub, count]) => {
-                const isSubActive = isActive && activeSub === sub;
+                const isSubActive = activeDomain === domain && activeSub === sub;
                 return (
                   <li key={sub}>
                     <Link
@@ -80,14 +92,21 @@ export function TaxonomyTree({ tree, activeDomain, activeSub }: Props) {
                         query: { domain, sub_category: sub },
                       }}
                       className={cn(
-                        "-mx-2 flex items-baseline justify-between rounded px-2 py-1 text-[12px]",
+                        "flex items-baseline justify-between py-[5px] pl-[13px] text-[13.5px]",
                         isSubActive
-                          ? "bg-bg-soft font-medium text-ink"
-                          : "text-ink-mid hover:bg-bg-soft hover:text-ink",
+                          ? "-ml-[2px] border-l-2 border-red pl-[11px] font-semibold text-red"
+                          : "text-ink-mid hover:text-ink",
                       )}
                     >
-                      <span>{sub}</span>
-                      <span className="text-[11px] text-ink-soft">{count}</span>
+                      <span className="truncate pr-2">{sub}</span>
+                      <span
+                        className={cn(
+                          "font-mono text-[11px]",
+                          isSubActive ? "text-red" : "text-ink-soft",
+                        )}
+                      >
+                        {count}
+                      </span>
                     </Link>
                   </li>
                 );
@@ -96,6 +115,15 @@ export function TaxonomyTree({ tree, activeDomain, activeSub }: Props) {
           </div>
         );
       })}
+
+      {needsReview != null && needsReview > 0 && (
+        <Link
+          href={{ pathname: "/notes", query: { domain: "Uncategorized" } }}
+          className="mt-6 inline-flex items-center gap-1.5 rounded-[7px] bg-warn-bg px-[11px] py-1.5 font-mono text-[10.5px] font-semibold tracking-[.06em] text-warn-ink"
+        >
+          ⚠ NEEDS REVIEW · {needsReview}
+        </Link>
+      )}
     </nav>
   );
 }

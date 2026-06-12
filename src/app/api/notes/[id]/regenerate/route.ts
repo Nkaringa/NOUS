@@ -80,11 +80,12 @@ export async function POST(
       .update({
         definition_md: def.data.definition_md,
         example_md: def.data.example_md,
+        key_terms: def.data.key_terms,
         embedding,
       })
       .eq("id", id)
       .select(
-        "id, user_id, heading, body_md, definition_md, example_md, domain, sub_category, source, created_at, updated_at",
+        "id, user_id, heading, body_md, definition_md, example_md, domain, sub_category, source, confidence, key_terms, created_at, updated_at",
       )
       .maybeSingle();
     if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
@@ -98,6 +99,7 @@ export async function POST(
       raw_input: heading,
       parsed_count: 1,
       status: "success",
+      note_ids: [id],
     });
 
     return NextResponse.json({ note: updated });

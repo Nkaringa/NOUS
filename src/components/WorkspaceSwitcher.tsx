@@ -72,11 +72,11 @@ export function WorkspaceSwitcher({
         onClick={() => setOpen((o) => !o)}
         disabled={pending}
         className={cn(
-          "flex items-center gap-1.5 rounded px-3 py-1.5 text-[13px] text-ink",
-          "border border-hairline-strong bg-bg-input hover:bg-bg-soft",
+          "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-ink-mid",
+          "bg-panel hover:bg-panel-deep hover:text-ink",
         )}
       >
-        <span className="max-w-[180px] truncate font-medium">{active.name}</span>
+        <span className="max-w-[180px] truncate">{active.name}</span>
         {active.member_count > 1 && (
           <span className="text-[10px] text-ink-soft">· {active.member_count}</span>
         )}
@@ -84,7 +84,7 @@ export function WorkspaceSwitcher({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-64 overflow-hidden rounded border border-hairline-strong bg-bg-input shadow-lg">
+        <div className="absolute left-0 top-full z-20 mt-1 w-64 overflow-hidden rounded-xl border border-hairline bg-tile shadow-lg">
           <div className="border-b border-hairline px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-ink-mid">
             Switch workspace
           </div>

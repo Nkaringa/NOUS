@@ -4,7 +4,12 @@ import { getActiveWorkspaceId } from "@/lib/workspaces/active";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewChatPage() {
+export default async function NewChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const { q } = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -39,6 +44,7 @@ export default async function NewChatPage() {
           initialMessages={[]}
           noteCount={noteCount}
           chatCount={chatCount}
+          initialQuestion={q}
         />
       </div>
     </div>

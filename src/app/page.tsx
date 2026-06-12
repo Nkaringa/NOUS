@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveWorkspaceId } from "@/lib/workspaces/active";
+import { DashboardCaptureBar } from "@/components/DashboardCaptureBar";
+import { KnowledgeMap, type KnowledgeDomain } from "@/components/KnowledgeMap";
 
 export const dynamic = "force-dynamic";
+
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+const DAY_MS = 24 * 3600 * 1000;
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -12,16 +17,23 @@ export default async function HomePage() {
   const workspaceId = await getActiveWorkspaceId(supabase, user.id);
   if (!workspaceId) {
     return (
-      <main className="mx-auto max-w-[1100px] px-8 py-10">
+      <main className="mx-auto max-w-[1680px] px-9 py-10">
         <p className="text-[14px] text-ink-mid">
-          No workspace available. <Link href="/workspaces" className="text-red hover:underline">Create one</Link>.
+          No workspace available.{" "}
+          <Link href="/workspaces" className="text-red hover:underline">
+            Create one
+          </Link>
+          .
         </p>
       </main>
     );
   }
 
-  const [wsRow, recentNotesRes, recentSessionsRes, recentActivityRes] = await Promise.all([
-    supabase.from("workspaces").select("name").eq("id", workspaceId).maybeSingle(),
+  const [allNotesRes, recentNotesRes, recentSessionsRes] = await Promise.all([
+    supabase
+      .from("notes")
+      .select("domain, sub_category, created_at")
+      .eq("workspace_id", workspaceId),
     supabase
       .from("notes")
       .select("id, heading, domain, sub_category, created_at")
@@ -34,168 +46,195 @@ export default async function HomePage() {
       .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false })
       .limit(3),
-    supabase
-      .from("ingest_log")
-      .select("id, mode, status, parsed_count, created_at")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false })
-      .limit(3),
   ]);
 
-  const workspaceName = wsRow.data?.name ?? "Workspace";
+  const allNotes = (allNotesRes.data ?? []) as Array<{
+    domain: string;
+    sub_category: string;
+    created_at: string;
+  }>;
   const recentNotes = recentNotesRes.data ?? [];
   const recentSessions = recentSessionsRes.data ?? [];
-  const recentActivity = recentActivityRes.data ?? [];
+
+  // Derive stats + the knowledge-map breakdown from the single all-notes pull.
+  const now = Date.now();
+  const domainSet = new Set<string>();
+  const pairSet = new Set<string>();
+  const byDomain = new Map<string, Map<string, number>>();
+  let lastAdded: string | null = null;
+  let addedThisWeek = 0;
+  let addedToday = 0;
+  for (const n of allNotes) {
+    domainSet.add(n.domain);
+    pairSet.add(`${n.domain}|${n.sub_category}`);
+    const subs = byDomain.get(n.domain) ?? new Map<string, number>();
+    subs.set(n.sub_category, (subs.get(n.sub_category) ?? 0) + 1);
+    byDomain.set(n.domain, subs);
+    if (!lastAdded || n.created_at > lastAdded) lastAdded = n.created_at;
+    const age = now - new Date(n.created_at).getTime();
+    if (age < WEEK_MS) addedThisWeek++;
+    if (age < DAY_MS) addedToday++;
+  }
+
+  const knowledge: KnowledgeDomain[] = Array.from(byDomain.entries())
+    .map(([domain, subs]) => {
+      const subList = Array.from(subs.entries())
+        .map(([sub_category, count]) => ({ sub_category, count }))
+        .sort((a, b) => b.count - a.count);
+      return {
+        domain,
+        total: subList.reduce((acc, s) => acc + s.count, 0),
+        subs: subList,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
 
   return (
-    <main className="mx-auto max-w-[1100px] px-8 py-10">
-      <div className="mb-8 flex items-baseline justify-between">
-        <div>
-          <h1>{workspaceName}</h1>
-          <p className="mt-1 text-[13px] text-ink-mid">
-            Signed in as {user.email}
-          </p>
+    <main className="mx-auto grid max-w-[1680px] grid-cols-1 gap-11 px-9 pb-16 pt-9 lg:grid-cols-[236px_minmax(0,1fr)_330px]">
+      {/* ── LEFT: stat rail ── */}
+      <aside className="hidden lg:block">
+        <Stat value={allNotes.length} label="Notes" first />
+        <Stat value={domainSet.size} label="Domains" />
+        <Stat value={pairSet.size} label="Sub-categories" />
+        <Stat
+          value={addedThisWeek}
+          label="Added this week"
+          delta={addedToday > 0 ? `+${addedToday} today` : undefined}
+        />
+        <Stat
+          value={lastAdded ? formatRelative(lastAdded) : "—"}
+          label="Since last note"
+          last
+        />
+      </aside>
+
+      {/* ── CENTER: capture + knowledge map ── */}
+      <div className="min-w-0">
+        <DashboardCaptureBar />
+
+        {knowledge.length > 0 && (
+          <section className="mt-11">
+            <div className="mb-[18px] flex items-baseline justify-between">
+              <h2 className="text-[11px] font-bold uppercase tracking-[.14em] text-ink">
+                Knowledge map
+              </h2>
+              <Link href="/notes" className="text-[12px] font-medium text-red hover:underline">
+                browse notes →
+              </Link>
+            </div>
+            <KnowledgeMap domains={knowledge} />
+          </section>
+        )}
+      </div>
+
+      {/* ── RIGHT: feed ── */}
+      <aside>
+        <div className="mb-3.5 flex items-baseline justify-between">
+          <h2 className="text-[11px] font-bold uppercase tracking-[.14em] text-ink">
+            Recent notes
+          </h2>
+          <Link href="/notes" className="text-[12px] font-medium text-red hover:underline">
+            view all
+          </Link>
         </div>
-        <Link
-          href="/ingest"
-          className="rounded bg-red px-4 py-2 text-[13px] font-medium text-white hover:bg-red-deep"
-        >
-          + Capture
-        </Link>
-      </div>
+        {recentNotes.length === 0 ? (
+          <p className="text-[13px] text-ink-mid">
+            Nothing yet —{" "}
+            <Link href="/ingest" className="text-red hover:underline">
+              add your first note
+            </Link>
+            .
+          </p>
+        ) : (
+          recentNotes.map((n) => (
+            <Link
+              key={n.id}
+              href={`/notes/${n.id}`}
+              className="mb-2 block rounded-[10px] bg-panel px-[15px] py-[13px] hover:bg-panel-deep"
+            >
+              <span className="flex justify-between gap-2.5 text-[13.5px] font-medium text-ink">
+                <span className="truncate">{n.heading}</span>
+                <time className="shrink-0 font-mono text-[11px] font-normal text-ink-soft">
+                  {formatRelative(n.created_at)}
+                </time>
+              </span>
+              <span className="mt-1 block text-[11.5px] text-ink-soft">
+                {n.domain} · <em className="not-italic text-red">{n.sub_category}</em>
+              </span>
+            </Link>
+          ))
+        )}
 
-      <div className="grid gap-12 md:grid-cols-[1.4fr_1fr]">
-        <section>
-          <SectionHeader title="Recent notes" meta={`${recentNotes.length === 0 ? "none yet" : recentNotes.length + " shown"}`} link={{ href: "/notes", label: "view all" }} />
-          {recentNotes.length === 0 ? (
-            <EmptyState>
-              Nothing yet — <Link href="/ingest" className="text-red hover:underline">add your first note</Link>.
-            </EmptyState>
-          ) : (
-            <ul>
-              {recentNotes.map((n) => (
-                <li key={n.id}>
-                  <Link
-                    href={`/notes/${n.id}`}
-                    className="group -mx-2 grid grid-cols-[1fr_auto] items-center gap-4 rounded px-2 py-3 border-b border-hairline hover:bg-bg-soft"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-[14px] text-ink">
-                        {n.heading}
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-ink-mid">
-                        {n.domain}
-                        <span className="px-1.5 text-ink-soft">·</span>
-                        <span className="text-red">{n.sub_category}</span>
-                      </div>
-                    </div>
-                    <div className="font-mono text-[11px] text-ink-mid">
-                      {formatRelative(n.created_at)}
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <div className="h-[30px]" />
 
-        <section>
-          <SectionHeader title="Recent chats" meta={`${recentSessions.length === 0 ? "none yet" : recentSessions.length + " shown"}`} link={{ href: "/chat", label: "view all" }} />
-          {recentSessions.length === 0 ? (
-            <EmptyState>
-              No chats yet — <Link href="/chat" className="text-red hover:underline">start one</Link>.
-            </EmptyState>
-          ) : (
-            <ul className="mb-10">
-              {recentSessions.map((s) => (
-                <li key={s.id}>
-                  <Link
-                    href={`/chat/${s.id}`}
-                    className="group -mx-2 grid grid-cols-[1fr_auto] items-center gap-4 rounded px-2 py-3 border-b border-hairline hover:bg-bg-soft"
-                  >
-                    <div className="truncate text-[14px] text-ink">{s.title}</div>
-                    <div className="font-mono text-[11px] text-ink-soft">
-                      {formatRelative(s.created_at)}
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <SectionHeader title="Activity" meta="" link={{ href: "/activity", label: "view all" }} />
-          {recentActivity.length === 0 ? (
-            <EmptyState>No ingests yet.</EmptyState>
-          ) : (
-            <ul>
-              {recentActivity.map((r) => (
-                <li
-                  key={r.id}
-                  className="grid grid-cols-[50px_1fr_auto] items-baseline gap-3 border-b border-hairline py-2.5 text-[12px]"
-                >
-                  <span className="font-mono text-[11px] text-ink-mid">
-                    {formatTime(r.created_at)}
-                  </span>
-                  <span className="text-ink">
-                    <span className="text-ink-mid">{r.mode}</span>
-                    <span className="px-1.5 text-ink-soft">·</span>
-                    {r.parsed_count} {r.parsed_count === 1 ? "item" : "items"}
-                  </span>
-                  <StatusPill status={r.status as "success" | "partial" | "failed"} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+        <div className="mb-3.5 flex items-baseline justify-between">
+          <h2 className="text-[11px] font-bold uppercase tracking-[.14em] text-ink">
+            Recent chats
+          </h2>
+          <Link href="/chat" className="text-[12px] font-medium text-red hover:underline">
+            view all
+          </Link>
+        </div>
+        {recentSessions.length === 0 ? (
+          <p className="text-[13px] text-ink-mid">
+            No chats yet —{" "}
+            <Link href="/chat" className="text-red hover:underline">
+              start one
+            </Link>
+            .
+          </p>
+        ) : (
+          recentSessions.map((s) => (
+            <Link
+              key={s.id}
+              href={`/chat/${s.id}`}
+              className="mb-2 block rounded-[10px] bg-panel px-[15px] py-[13px] hover:bg-panel-deep"
+            >
+              <span className="flex justify-between gap-2.5">
+                <span className="truncate font-serif text-[14.5px] text-ink">
+                  {s.title}
+                </span>
+                <time className="shrink-0 font-mono text-[11px] text-ink-soft">
+                  {formatRelative(s.created_at)}
+                </time>
+              </span>
+            </Link>
+          ))
+        )}
+      </aside>
     </main>
   );
 }
 
-function SectionHeader({
-  title,
-  meta,
-  link,
+function Stat({
+  value,
+  label,
+  delta,
+  first,
+  last,
 }: {
-  title: string;
-  meta: string;
-  link?: { href: string; label: string };
+  value: number | string;
+  label: string;
+  delta?: string;
+  first?: boolean;
+  last?: boolean;
 }) {
   return (
-    <div className="mb-1 flex items-baseline justify-between border-b border-hairline-strong py-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink">
-        {title}
-      </span>
-      <span className="text-[11px] text-ink-mid">
-        {meta}
-        {link && (
-          <>
-            {meta && " · "}
-            <Link href={link.href} className="text-red hover:underline">
-              {link.label}
-            </Link>
-          </>
+    <div
+      className={`py-[21px] ${first ? "pt-1.5" : ""} ${last ? "" : "border-b border-hairline"}`}
+    >
+      <div className="font-mono text-[32px] font-semibold leading-none tracking-[-.02em] text-ink">
+        {value}
+        {delta && (
+          <span className="ml-2.5 inline-block translate-y-[-7px] rounded bg-ok-bg px-[7px] py-0.5 font-sans text-[11px] font-medium tracking-normal text-ok-ink">
+            {delta}
+          </span>
         )}
-      </span>
+      </div>
+      <div className="mt-2 text-[10.5px] font-semibold uppercase tracking-[.12em] text-ink-soft">
+        {label}
+      </div>
     </div>
-  );
-}
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return <p className="py-6 text-[13px] text-ink-mid">{children}</p>;
-}
-
-function StatusPill({ status }: { status: "success" | "partial" | "failed" }) {
-  const styles = {
-    success: "bg-ok-bg text-ok-ink",
-    partial: "bg-warn-bg text-warn-ink",
-    failed: "bg-red-bg text-red-deep",
-  } as const;
-  const labels = { success: "ok", partial: "partial", failed: "failed" } as const;
-  return (
-    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${styles[status]}`}>
-      {labels[status]}
-    </span>
   );
 }
 
@@ -205,8 +244,4 @@ function formatRelative(ts: string): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
   return `${Math.floor(diff / 86_400_000)}d`;
-}
-
-function formatTime(ts: string): string {
-  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

@@ -69,50 +69,62 @@ export function MemberList({
   return (
     <div>
       {err && (
-        <div className="mb-3 rounded border border-red bg-red-bg p-2 text-[12px] text-red-deep">
+        <div className="mb-3 rounded-lg bg-fail-bg p-2.5 text-[12px] text-red-deep">
           {err}
         </div>
       )}
-      <ul>
+      <ul className="border-t border-hairline">
         {members.map((m) => {
           const isSelf = m.user_id === currentUserId;
           const isWsOwner = m.user_id === ownerId;
           const canRemove =
             !isWsOwner && // owner can never be removed (must delete workspace)
             (isSelf || isOwner); // self-leave OR owner removing someone else
+          const label = m.email ?? `user ${m.user_id.slice(0, 8)}…`;
 
           return (
             <li
               key={m.id}
-              className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-hairline py-2.5"
+              className="flex items-center gap-4 border-b border-hairline px-1 py-[15px]"
             >
-              <div className="min-w-0">
-                <div className="truncate text-[13px] text-ink">
-                  {m.email ?? `user ${m.user_id.slice(0, 8)}…`}
-                  {isSelf && <span className="ml-1 text-[10px] text-ink-soft">(you)</span>}
+              <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-panel-deep text-[13px] font-semibold text-ink-mid">
+                {label.charAt(0).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[14px] font-medium text-ink">
+                  {label}
+                  {isSelf && (
+                    <span className="ml-1.5 text-[12px] font-normal text-ink-soft">
+                      (you)
+                    </span>
+                  )}
                 </div>
-                <div className="mt-0.5 text-[10px] text-ink-soft">
-                  joined {new Date(m.joined_at).toLocaleDateString()}
+                <div className="mt-[3px] font-mono text-[11px] uppercase text-ink-soft">
+                  joined{" "}
+                  {new Date(m.joined_at)
+                    .toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
                 </div>
               </div>
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
-                  isWsOwner ? "bg-red-bg text-red-deep" : "bg-bg-soft text-ink-mid"
+                className={`shrink-0 rounded-[5px] px-2 py-[3px] text-[9px] font-bold uppercase tracking-[.08em] ${
+                  isWsOwner ? "bg-red-bg text-red-deep" : "bg-panel text-ink-mid"
                 }`}
               >
                 {isWsOwner ? "owner" : m.role}
               </span>
-              {canRemove ? (
+              {canRemove && (
                 <button
                   type="button"
                   onClick={() => remove(m.user_id, isSelf)}
                   disabled={busy === m.user_id}
-                  className="text-[11px] text-ink-mid hover:text-red-deep disabled:opacity-50"
+                  className="shrink-0 text-[12px] text-ink-soft hover:text-red disabled:opacity-50"
                 >
-                  {busy === m.user_id ? "…" : isSelf ? "Leave" : "Remove"}
+                  {busy === m.user_id ? "…" : isSelf ? "leave" : "remove"}
                 </button>
-              ) : (
-                <span className="w-12" />
               )}
             </li>
           );

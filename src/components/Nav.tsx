@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveWorkspaceId } from "@/lib/workspaces/active";
-import { WorkspaceSwitcher, type WorkspaceListItem } from "./WorkspaceSwitcher";
+import { NavChrome } from "./NavChrome";
+import type { WorkspaceListItem } from "./WorkspaceSwitcher";
 
 export async function Nav() {
   const supabase = await createClient();
@@ -64,48 +64,6 @@ export async function Nav() {
   }
 
   return (
-    <header className="sticky top-0 z-10 border-b border-hairline bg-bg">
-      <div className="mx-auto flex max-w-[1100px] items-center justify-between gap-4 px-8 py-3.5">
-        <div className="flex items-center gap-4">
-          <Link
-            href="/"
-            className="text-[15px] font-semibold tracking-wide text-ink outline-none focus-visible:ring-2 focus-visible:ring-red/40 rounded"
-          >
-            NOUS
-          </Link>
-          {user && (
-            <WorkspaceSwitcher workspaces={workspaces} activeId={activeId} />
-          )}
-        </div>
-        <nav className="flex items-center gap-1">
-          <NavLink href="/">Dashboard</NavLink>
-          <NavLink href="/ingest">Ingest</NavLink>
-          <NavLink href="/notes">Notes</NavLink>
-          <NavLink href="/chat">Chat</NavLink>
-          <NavLink href="/activity">Activity</NavLink>
-        </nav>
-        {user && (
-          <form action="/auth/signout" method="post">
-            <button
-              type="submit"
-              className="text-[12px] text-ink-mid hover:text-ink outline-none focus-visible:ring-2 focus-visible:ring-red/40 rounded px-1"
-            >
-              Sign out
-            </button>
-          </form>
-        )}
-      </div>
-    </header>
-  );
-}
-
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="rounded px-3 py-1.5 text-[13px] font-medium text-ink-mid outline-none transition-colors hover:bg-bg-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-red/40"
-    >
-      {children}
-    </Link>
+    <NavChrome signedIn={!!user} workspaces={workspaces} activeId={activeId} />
   );
 }

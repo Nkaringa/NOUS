@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Markdown } from "./Markdown";
-import { cn } from "@/lib/utils";
 
 export type CitedNote = {
   id: string;
@@ -32,11 +31,13 @@ export function RAGChat({
   initialMessages,
   noteCount,
   chatCount,
+  initialQuestion,
 }: {
   sessionId: string | null;
   initialMessages: ChatMessage[];
   noteCount?: number;
   chatCount?: number;
+  initialQuestion?: string;
 }) {
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -44,6 +45,7 @@ export function RAGChat({
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const autoSentRef = useRef(false);
 
   useEffect(() => {
     scrollerRef.current?.scrollTo({
@@ -52,8 +54,18 @@ export function RAGChat({
     });
   }, [messages]);
 
-  async function send() {
-    const question = input.trim();
+  // Auto-send a question passed via ?q= (from the dashboard capture bar).
+  // Fires once; the ref guards against React strict-mode double-invoke.
+  useEffect(() => {
+    if (initialQuestion && !autoSentRef.current) {
+      autoSentRef.current = true;
+      void send(initialQuestion);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion]);
+
+  async function send(explicitQuestion?: string) {
+    const question = (explicitQuestion ?? input).trim();
     if (!question || running) return;
 
     setInput("");
@@ -175,7 +187,7 @@ export function RAGChat({
         ))}
       </div>
 
-      <div className="border-t border-hairline pt-4">
+      <div className="pt-4">
         {isEmpty && (
           <div className="mb-3 flex flex-wrap gap-1.5">
             {SAMPLE_QUESTIONS.map((q) => (
@@ -184,34 +196,35 @@ export function RAGChat({
                 type="button"
                 onClick={() => setInput(q)}
                 disabled={running}
-                className="rounded-full border border-hairline px-3 py-1 text-[12px] text-ink-mid transition-colors hover:border-hairline-strong hover:bg-bg-soft hover:text-ink disabled:opacity-50"
+                className="rounded-full border border-hairline px-3 py-1 text-[12px] text-ink-mid transition-colors hover:border-hairline-strong hover:bg-panel hover:text-ink disabled:opacity-50"
               >
                 {q}
               </button>
             ))}
           </div>
         )}
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={2}
-          placeholder="Ask anything about your notes…"
-          disabled={running}
-          className="w-full resize-none rounded border border-hairline-strong bg-bg-input px-3 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-soft focus:border-ink disabled:opacity-50"
-        />
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-[11px] text-ink-soft">
-            ↵ send · ⇧↵ newline
-          </span>
+        <div className="flex items-end gap-3 rounded-[13px] bg-panel py-[7px] pl-[18px] pr-[7px]">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            rows={2}
+            placeholder="Ask anything about your notes…"
+            disabled={running}
+            className="max-h-[120px] w-full resize-none bg-transparent py-2 text-[14.5px] leading-normal text-ink outline-none placeholder:text-ink-soft disabled:opacity-50"
+          />
           <button
             type="button"
-            onClick={send}
+            onClick={() => send()}
             disabled={running || !input.trim()}
-            className="rounded bg-red px-4 py-1.5 text-[13px] font-medium text-white hover:bg-red-deep disabled:opacity-50"
+            className="shrink-0 rounded-[9px] bg-red px-[22px] py-[11px] text-[13px] font-semibold text-white hover:bg-red-deep disabled:opacity-40"
           >
             {running ? "Thinking…" : "Send"}
           </button>
+        </div>
+        <div className="mt-2 text-[11px] text-ink-soft">
+          <b className="font-mono font-medium text-ink-mid">↵</b> send ·{" "}
+          <b className="font-mono font-medium text-ink-mid">⇧↵</b> newline
         </div>
       </div>
     </div>
@@ -286,7 +299,7 @@ function MessageBlock({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[75%] rounded-lg rounded-br-sm bg-ink px-4 py-2.5 text-[14px] text-white">
+        <div className="max-w-[70%] rounded-[14px] rounded-br-[4px] bg-ink px-4 py-[11px] text-[14.5px] text-white">
           {message.content}
         </div>
       </div>
@@ -322,7 +335,7 @@ function NoNotesBanner() {
 function AssistantBubble({ message }: { message: ChatMessage }) {
   const content = withCitationLinks(message.content, message.notes ?? []);
   return (
-    <div className="py-2">
+    <div className="max-w-[680px] py-2">
       {message.content || message.pending ? (
         <Markdown variant="serif">{content}</Markdown>
       ) : null}
@@ -338,22 +351,30 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
 
 function SourcesList({ notes }: { notes: CitedNote[] }) {
   return (
-    <div className="space-y-2 border-t border-hairline pt-3">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-ink-mid">
-        Retrieved sources ({notes.length})
+    <div className="max-w-[680px] border-t border-hairline pt-3.5">
+      <div className="mb-2 font-mono text-[9.5px] font-semibold uppercase tracking-[.12em] text-ink-soft">
+        Sources · {notes.length} note{notes.length === 1 ? "" : "s"}
       </div>
-      <ul className="flex flex-wrap gap-1.5">
-        {notes.map((n) => (
+      <ul className="space-y-[5px]">
+        {notes.map((n, i) => (
           <li key={n.id}>
             <Link
               href={`/notes/${n.id}`}
-              className={cn(
-                "inline-flex items-baseline gap-1 rounded bg-bg-soft px-2.5 py-1 text-[12px] text-ink",
-                "hover:bg-red hover:text-white",
-              )}
-              title={`${n.domain} / ${n.sub_category}`}
+              className="group flex items-center gap-2.5 rounded-lg bg-panel px-3 py-[9px] hover:bg-panel-deep"
             >
-              {n.heading}
+              <span className="w-3.5 shrink-0 font-mono text-[10px] font-semibold text-red">
+                {i + 1}
+              </span>
+              <b className="shrink-0 text-[13px] font-semibold text-ink">
+                {n.heading}
+              </b>
+              <span className="truncate text-[12px] text-ink-mid">
+                {n.domain} ·{" "}
+                <em className="not-italic text-red">{n.sub_category}</em>
+              </span>
+              <span className="ml-auto shrink-0 text-[11.5px] font-medium text-red opacity-0 transition-opacity group-hover:opacity-100">
+                open →
+              </span>
             </Link>
           </li>
         ))}

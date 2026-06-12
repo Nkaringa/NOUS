@@ -1,34 +1,44 @@
 @import "tailwindcss";
 
+/* ════ NOUS design system — Slate + IBM Plex (locked 2026-06-11) ════
+   Layout: Workbench zones · Nav: pill group · Palette: pure white +
+   cool slate greys + signal red · Type: IBM Plex Sans / IBM Plex Mono,
+   Source Serif 4 for reading matter (note bodies, chat answers). */
+
 @theme {
-  /* Surfaces — pure white base; bg-soft separates panels/inputs */
+  /* Surfaces — pure white base; panel/panel-deep are the soft fills
+     (no hairline borders on work surfaces). tile = white card nested
+     inside a panel. */
   --color-bg: #ffffff;
   --color-bg-input: #ffffff;
-  --color-bg-soft: #f5f5f4;
+  --color-bg-soft: #f3f4f6;      /* legacy alias — same as panel */
+  --color-panel: #f3f4f6;
+  --color-panel-deep: #eaecef;
+  --color-tile: #ffffff;
 
-  /* Text — recalibrated for pure white. ink-mid hits ~7.5:1, ink-soft ~5:1 */
-  --color-ink: #1a1a1a;
-  --color-ink-mid: #4f4f4f;
-  --color-ink-soft: #7a7a7a;
+  /* Text — cool-leaning inks */
+  --color-ink: #15171a;
+  --color-ink-mid: #4d5158;
+  --color-ink-soft: #878c94;
 
-  /* Lines — neutral, slightly stronger than before */
-  --color-hairline: #e4e4e3;
-  --color-hairline-strong: #d4d4d2;
+  /* Lines — for the flat/typographic surfaces (ledgers, indexes) */
+  --color-hairline: #e8eaed;
+  --color-hairline-strong: #d6d9de;
 
   /* Accent */
   --color-red: #c1281c;
   --color-red-deep: #8a1a12;
-  --color-red-bg: #fde8e6;
+  --color-red-bg: #fbe9e7;       /* chips, badges */
+  --color-fail-bg: #fceeec;      /* problem blocks ("problems get mass") */
 
-  /* Status (light variants — calibrated for pure white) */
-  --color-ok-bg: #e6f4e6;
+  /* Status (light variants) */
+  --color-ok-bg: #e4f0e7;
   --color-ok-ink: #1d6630;
-  --color-warn-bg: #fdf0d4;
-  --color-warn-ink: #7a5a00;
+  --color-warn-bg: #f9f3dd;
+  --color-warn-ink: #8a6a00;
 
-  /* Fonts — next/font sets the *-loaded variables on <html>; we wrap them
-     with system fallbacks so font-sans / font-serif / font-mono Tailwind
-     utilities resolve correctly even before fonts swap in. */
+  /* Fonts — next/font sets the *-loaded variables on <html>; wrapped
+     with system fallbacks so Tailwind utilities resolve pre-swap. */
   --font-sans: var(--font-sans-loaded), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-serif: var(--font-serif-loaded), Georgia, Cambria, "Times New Roman", serif;
   --font-mono: var(--font-mono-loaded), ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -43,17 +53,14 @@ html, body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 15px;
-  line-height: 1.55;
-  /* Inter is a variable font; 450 is between Regular and Medium — adds
-     presence to body text without looking bold. */
+  line-height: 1.5;
   font-weight: 450;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "ss01", "cv11";
 }
 
 h1 {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.2;

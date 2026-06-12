@@ -38,25 +38,20 @@ export function ChatSidebar({ sessions }: { sessions: ChatSessionListItem[] }) {
   }
 
   return (
-    <aside className="md:sticky md:top-20 md:self-start">
+    <aside className="md:sticky md:top-9 md:self-start">
       <Link
         href="/chat"
-        className={cn(
-          "mb-5 block rounded px-3 py-2 text-center text-[13px] font-medium transition-colors",
-          !activeId
-            ? "border border-hairline-strong text-ink hover:border-red hover:text-red"
-            : "border border-hairline text-ink-mid hover:bg-bg-soft hover:text-ink",
-        )}
+        className="mb-6 block rounded-[10px] border border-hairline py-[9px] text-center text-[13px] font-semibold text-ink transition-colors hover:border-red hover:text-red"
       >
         + New chat
       </Link>
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-mid">
+      <div className="mb-2.5 text-[10.5px] font-bold uppercase tracking-[.14em] text-ink-soft">
         Recent
       </div>
       {sessions.length === 0 ? (
         <p className="text-[12px] text-ink-soft">No chats yet.</p>
       ) : (
-        <ul className="space-y-0.5">
+        <ul>
           {sessions.map((s) => {
             const isActive = s.id === activeId;
             return (
@@ -64,20 +59,23 @@ export function ChatSidebar({ sessions }: { sessions: ChatSessionListItem[] }) {
                 <Link
                   href={`/chat/${s.id}`}
                   className={cn(
-                    "block rounded py-2 pr-7 text-[13px] leading-snug transition-colors",
+                    "block py-2 pr-7 text-[13.5px] font-medium leading-[1.4] transition-colors",
                     isActive
-                      ? "border-l-2 border-red bg-bg-soft pl-3 font-medium text-ink -ml-px"
-                      : "px-2 -mx-2 font-medium text-ink-mid hover:bg-bg-soft hover:text-ink",
+                      ? "-ml-[13px] border-l-2 border-red pl-[11px] font-semibold text-red"
+                      : "text-ink-mid hover:text-ink",
                   )}
                   title={s.title}
                 >
-                  <span className="line-clamp-2">{s.title}</span>
+                  <span className="block truncate">{s.title}</span>
+                  <time className="mt-px block font-mono text-[10px] font-normal text-ink-soft">
+                    {formatRelative(s.created_at)} ago
+                  </time>
                 </Link>
                 <button
                   type="button"
                   onClick={() => del(s.id)}
                   disabled={deletingId === s.id}
-                  className="absolute right-1 top-1.5 rounded px-1 text-[14px] leading-none text-ink-soft opacity-0 transition-opacity hover:text-red group-hover:opacity-100"
+                  className="absolute right-1 top-2 rounded px-1 text-[14px] leading-none text-ink-soft opacity-0 transition-opacity hover:text-red group-hover:opacity-100"
                   aria-label="Delete chat"
                 >
                   ×
@@ -89,4 +87,12 @@ export function ChatSidebar({ sessions }: { sessions: ChatSessionListItem[] }) {
       )}
     </aside>
   );
+}
+
+function formatRelative(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
+  return `${Math.floor(diff / 86_400_000)}d`;
 }

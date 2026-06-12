@@ -35,13 +35,16 @@ export default async function ChatSessionPage({
 
   return (
     <div>
-      <h1 className="truncate" title={session.title}>
-        {session.title}
-      </h1>
-      <p className="mt-1 text-[13px] text-ink-mid">
-        Continue the conversation — all messages are saved.
-      </p>
-      <div className="mt-8">
+      <div className="border-b border-hairline pb-[18px]">
+        <h1 className="truncate text-[18px]" title={session.title}>
+          {session.title}
+        </h1>
+        <p className="mt-1 font-mono text-[11px] uppercase tracking-[.04em] text-ink-soft">
+          {initial.length} message{initial.length === 1 ? "" : "s"} · answers
+          cite your notes inline
+        </p>
+      </div>
+      <div className="mt-7">
         <RAGChat sessionId={session.id} initialMessages={initial} />
       </div>
     </div>
