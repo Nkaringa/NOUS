@@ -2,7 +2,7 @@
 // DB rows are the canonical shape. Client-facing types omit server-only fields.
 
 export type NoteSource = "ui" | "bulk" | "cc-session" | "api";
-export type IngestMode = NoteSource | "recategorize";
+export type IngestMode = NoteSource | "recategorize" | "regenerate";
 export type IngestStatus = "success" | "partial" | "failed";
 export type WorkspaceRole = "owner" | "member";
 
@@ -17,6 +17,8 @@ export type Note = {
   domain: string;
   sub_category: string;
   source: NoteSource;
+  confidence: number | null;   // categorizer confidence; null pre-migration
+  key_terms: string[] | null;  // definer key terms; null pre-migration
   created_at: string;
   updated_at: string;
 };
@@ -46,6 +48,7 @@ export type IngestLog = {
   parsed_count: number;
   status: IngestStatus;
   error: string | null;
+  note_ids: string[] | null; // notes created by this run; null pre-migration
   created_at: string;
 };
 

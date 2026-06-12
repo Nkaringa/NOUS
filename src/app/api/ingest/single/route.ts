@@ -92,6 +92,7 @@ export async function POST(request: NextRequest) {
     raw_input: parsed.data.heading,
     parsed_count: 1,
     status: "success",
+    note_ids: [first.note.id],
   });
 
   return NextResponse.json(first.note);

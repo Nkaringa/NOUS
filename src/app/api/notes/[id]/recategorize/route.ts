@@ -64,7 +64,11 @@ export async function POST(
 
     const old = { domain: note.domain, sub_category: note.sub_category };
 
-    await supabase.from("notes").update({ domain, sub_category }).eq("id", id);
+    // Persist the fresh confidence alongside the new pair.
+    await supabase
+      .from("notes")
+      .update({ domain, sub_category, confidence: cat.confidence })
+      .eq("id", id);
     await bumpTaxonomy(supabase, { workspaceId, domain, sub_category });
 
     await supabase.from("ingest_log").insert({
@@ -75,6 +79,7 @@ export async function POST(
       raw_input: note.heading,
       parsed_count: 1,
       status: "success",
+      note_ids: [id],
     });
 
     return NextResponse.json({ old, new: { domain, sub_category } });

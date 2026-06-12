@@ -91,6 +91,8 @@ export async function POST(request: NextRequest) {
           domain: norm.canonical.domain,
           sub_category: norm.canonical.sub_category,
           source: "cc-session",
+          confidence: item.confidence,
+          key_terms: item.key_terms,
           embedding,
         })
         .select("id")
@@ -130,6 +132,7 @@ export async function POST(request: NextRequest) {
     parsed_count: insertedIds.length,
     status: errors.length === 0 ? "success" : insertedIds.length > 0 ? "partial" : "failed",
     error: errors.length > 0 ? errors.join("\n") : null,
+    note_ids: insertedIds.length > 0 ? insertedIds : null,
   });
 
   return NextResponse.json({
