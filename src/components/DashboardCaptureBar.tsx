@@ -34,30 +34,29 @@ export function DashboardCaptureBar() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 rounded-lg border border-hairline-strong bg-bg-input px-4 py-3 focus-within:border-ink">
+      <div className="flex items-center gap-3.5 rounded-xl bg-panel py-2 pl-5 pr-2">
         <input
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Capture a heading, or ask your notes…"
-          className="flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-soft"
+          className="flex-1 bg-transparent text-[15.5px] text-ink outline-none placeholder:text-ink-soft"
         />
         <button
           type="button"
           onClick={submit}
           disabled={!value.trim()}
-          className="shrink-0 rounded bg-red px-3.5 py-1.5 text-[13px] font-medium text-white hover:bg-red-deep disabled:opacity-40"
+          className="shrink-0 rounded-lg bg-red px-5 py-[11px] text-[13px] font-semibold text-white hover:bg-red-deep disabled:opacity-40"
         >
           {isAsk ? "Ask" : "Capture"}
         </button>
       </div>
-      <div className="mt-1.5 px-1 text-[11px] text-ink-soft">
-        Press{" "}
-        <kbd className="rounded border border-hairline px-1 font-mono">↵</kbd>{" "}
-        to {isAsk ? "ask in chat" : "capture"} · end with{" "}
-        <span className="font-mono text-ink-mid">?</span> to ask your notes
-        instead
+      <div className="mx-1 mt-2.5 text-[11.5px] text-ink-soft">
+        Press <b className="font-mono font-medium text-ink-mid">↵</b> to{" "}
+        {isAsk ? "ask in chat" : "capture"} &nbsp;·&nbsp; end with{" "}
+        <b className="font-mono font-medium text-ink-mid">?</b> to ask your
+        notes instead
       </div>
     </div>
   );

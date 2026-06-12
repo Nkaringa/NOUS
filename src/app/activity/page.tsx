@@ -1,14 +1,26 @@
-import Link from "next/link";
+// Activity — the daybook. Server side assembles everything the client
+// shell needs: day groups with resolved note links, and the capture-streak
+// grid. Note resolution: rows with note_ids (post-migration) resolve
+// directly; historic rows fall back to heading-matching within the
+// workspace.
+
 import { createClient } from "@/lib/supabase/server";
-import { cn } from "@/lib/utils";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { getActiveWorkspaceId } from "@/lib/workspaces/active";
+import {
+  ActivityDaybook,
+  type ActivityDay,
+  type ActivityEvent,
+  type ActivityResult,
+  type StreakData,
+} from "@/components/ActivityDaybook";
 import type { IngestLog } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const RECENT_PARTIAL_WINDOW_MS = 10 * 60 * 1000;
+const STREAK_WEEKS = 36;
 
 export default async function ActivityPage() {
   const supabase = await createClient();
@@ -18,205 +30,219 @@ export default async function ActivityPage() {
   const workspaceId = await getActiveWorkspaceId(supabase, user.id);
   if (!workspaceId) return null;
 
-  const { data, error } = await supabase
-    .from("ingest_log")
-    .select("id, user_id, workspace_id, mode, model, raw_input, parsed_count, status, error, created_at")
-    .eq("workspace_id", workspaceId)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  // Streak window: from the Sunday STREAK_WEEKS-1 weeks back, to today.
+  const today = new Date();
+  const windowStart = new Date(today);
+  windowStart.setDate(today.getDate() - today.getDay() - (STREAK_WEEKS - 1) * 7);
+  windowStart.setHours(0, 0, 0, 0);
 
-  const rows = data ?? [];
+  const [logRes, streakRes] = await Promise.all([
+    supabase
+      .from("ingest_log")
+      .select("id, user_id, workspace_id, mode, model, raw_input, parsed_count, status, error, note_ids, created_at")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("ingest_log")
+      .select("created_at, parsed_count")
+      .eq("workspace_id", workspaceId)
+      .gte("created_at", windowStart.toISOString())
+      .limit(2000),
+  ]);
+
+  const rows = (logRes.data ?? []) as IngestLog[];
   const hasActive = rows.some((r) => {
     if (r.status !== "partial") return false;
-    const age = Date.now() - new Date(r.created_at).getTime();
-    return age < RECENT_PARTIAL_WINDOW_MS;
+    return Date.now() - new Date(r.created_at).getTime() < RECENT_PARTIAL_WINDOW_MS;
   });
 
-  const byDay = new Map<string, IngestLog[]>();
-  for (const r of rows as IngestLog[]) {
-    const day = new Date(r.created_at).toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
+  // ── Resolve notes for every row ─────────────────────────────
+  const idSet = new Set<string>();
+  const headingSet = new Set<string>();
+  const parsedHeadingsByRow = new Map<string, string[]>();
+
+  for (const r of rows) {
+    const headings = parseLoggedHeadings(r.raw_input);
+    parsedHeadingsByRow.set(r.id, headings);
+    if (r.note_ids && r.note_ids.length > 0) {
+      r.note_ids.forEach((id) => idSet.add(id));
+    } else {
+      headings.forEach((h) => headingSet.add(h));
+    }
+  }
+
+  type NoteLite = {
+    id: string;
+    heading: string;
+    domain: string;
+    sub_category: string;
+    confidence: number | null;
+  };
+  const noteById = new Map<string, NoteLite>();
+  const noteByHeading = new Map<string, NoteLite>();
+
+  const [byIdRes, byHeadingRes] = await Promise.all([
+    idSet.size > 0
+      ? supabase
+          .from("notes")
+          .select("id, heading, domain, sub_category, confidence")
+          .in("id", Array.from(idSet))
+      : Promise.resolve({ data: [] }),
+    headingSet.size > 0
+      ? supabase
+          .from("notes")
+          .select("id, heading, domain, sub_category, confidence")
+          .eq("workspace_id", workspaceId)
+          .in("heading", Array.from(headingSet))
+      : Promise.resolve({ data: [] }),
+  ]);
+  for (const n of (byIdRes.data ?? []) as NoteLite[]) noteById.set(n.id, n);
+  for (const n of (byHeadingRes.data ?? []) as NoteLite[]) {
+    noteByHeading.set(n.heading.toLowerCase(), n);
+  }
+
+  // ── Build day groups ────────────────────────────────────────
+  const dayMap = new Map<string, ActivityDay>();
+  for (const r of rows) {
+    const d = new Date(r.created_at);
+    const key = d.toLocaleDateString("en-CA"); // YYYY-MM-DD, local
+    let day = dayMap.get(key);
+    if (!day) {
+      day = {
+        key,
+        dayNum: String(d.getDate()),
+        monthLabel: `${d.toLocaleDateString(undefined, { weekday: "short" })} · ${d
+          .toLocaleDateString(undefined, { month: "short", year: "numeric" })}`
+          .toUpperCase(),
+        captured: 0,
+        regenerated: 0,
+        errorCount: 0,
+        failedRuns: 0,
+        events: [],
+      };
+      dayMap.set(key, day);
+    }
+
+    const isInProgress =
+      r.status === "partial" &&
+      Date.now() - new Date(r.created_at).getTime() < RECENT_PARTIAL_WINDOW_MS &&
+      r.model === "pending";
+    const status: ActivityEvent["status"] = isInProgress ? "running" : r.status;
+
+    const errorLines = r.error
+      ? r.error.split("\n").map((l) => l.trim()).filter(Boolean)
+      : [];
+
+    const headings = parsedHeadingsByRow.get(r.id) ?? [];
+    let results: ActivityResult[];
+    if (r.note_ids && r.note_ids.length > 0) {
+      results = r.note_ids
+        .map((id) => noteById.get(id))
+        .filter((n): n is NoteLite => !!n)
+        .map((n) => ({
+          noteId: n.id,
+          heading: n.heading,
+          domain: n.domain,
+          sub_category: n.sub_category,
+          confidence: n.confidence,
+        }));
+    } else {
+      results = headings.map((h) => {
+        const n = noteByHeading.get(h.toLowerCase());
+        return n
+          ? {
+              noteId: n.id,
+              heading: n.heading,
+              domain: n.domain,
+              sub_category: n.sub_category,
+              confidence: n.confidence,
+            }
+          : { noteId: null, heading: h, domain: null, sub_category: null, confidence: null };
+      });
+    }
+
+    if (r.mode === "regenerate" || r.mode === "recategorize") {
+      day.regenerated += 1;
+    } else {
+      day.captured += r.parsed_count;
+    }
+    day.errorCount += errorLines.length;
+    if (r.status === "failed") day.failedRuns += 1;
+
+    day.events.push({
+      id: r.id,
+      time: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      mode: r.mode,
+      status,
+      parsedCount: r.parsed_count,
+      inputCount: Math.max(headings.length, r.parsed_count),
+      model: isInProgress ? "pending" : r.model,
+      rawInput: r.raw_input,
+      errorLines,
+      results,
     });
-    const arr = byDay.get(day) ?? [];
-    arr.push(r);
-    byDay.set(day, arr);
+  }
+  const days = Array.from(dayMap.values());
+
+  // ── Streak ──────────────────────────────────────────────────
+  const perDay = new Map<string, number>();
+  for (const r of streakRes.data ?? []) {
+    const key = new Date(r.created_at as string).toLocaleDateString("en-CA");
+    perDay.set(key, (perDay.get(key) ?? 0) + Math.max(1, (r.parsed_count as number) ?? 0));
   }
 
+  const cells: number[] = [];
+  const months: StreakData["months"] = [];
+  let activeDays = 0;
+  let longestStreak = 0;
+  let runStreak = 0;
+  let prevMonth = -1;
+  const todayKey = today.toLocaleDateString("en-CA");
+
+  for (let w = 0; w < STREAK_WEEKS; w++) {
+    const weekStart = new Date(windowStart);
+    weekStart.setDate(windowStart.getDate() + w * 7);
+    if (weekStart.getMonth() !== prevMonth) {
+      prevMonth = weekStart.getMonth();
+      months.push({
+        week: w,
+        label: weekStart.toLocaleDateString(undefined, { month: "short" }).toUpperCase(),
+      });
+    }
+    for (let dd = 0; dd < 7; dd++) {
+      const date = new Date(windowStart);
+      date.setDate(windowStart.getDate() + w * 7 + dd);
+      const key = date.toLocaleDateString("en-CA");
+      if (key > todayKey) {
+        cells.push(-1);
+        continue;
+      }
+      const count = perDay.get(key) ?? 0;
+      if (count > 0) {
+        activeDays++;
+        runStreak++;
+        longestStreak = Math.max(longestStreak, runStreak);
+      } else {
+        runStreak = 0;
+      }
+      cells.push(count === 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 6 ? 3 : 4);
+    }
+  }
+
+  const streak: StreakData = {
+    cells,
+    weeks: STREAK_WEEKS,
+    months,
+    activeDays,
+    longestStreak,
+  };
+
   return (
-    <main className="mx-auto max-w-[860px] px-8 py-10">
+    <main className="mx-auto max-w-[1060px] px-9 pb-[90px] pt-11">
       <AutoRefresh active={hasActive} />
-
-      <div className="mb-1 flex items-baseline justify-between">
-        <div>
-          <h1>Activity</h1>
-          <p className="mt-1 text-[13px] text-ink-mid">
-            Every ingest, recategorize, and CC-session call writes one event here.
-          </p>
-        </div>
-        {hasActive && (
-          <span className="flex items-center gap-1.5 text-[12px] text-warn-ink">
-            <span className="inline-block size-1.5 animate-pulse rounded-full bg-warn-ink" />
-            Live
-          </span>
-        )}
-      </div>
-
-      {error && (
-        <div className="mt-6 rounded border border-red bg-red-bg p-3 text-[12px] text-red-deep">
-          {error.message}
-        </div>
-      )}
-
-      {rows.length === 0 && (
-        <p className="mt-12 text-[14px] text-ink-mid">
-          No activity yet.{" "}
-          <Link href="/ingest" className="text-red hover:underline">
-            Ingest something →
-          </Link>
-        </p>
-      )}
-
-      <div className="mt-10 space-y-12">
-        {Array.from(byDay.entries()).map(([day, dayRows]) => (
-          <section key={day}>
-            <div className="mb-5 flex items-baseline justify-between">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink">
-                {day}
-              </h2>
-              <span className="font-mono text-[11px] text-ink-soft">
-                {dayRows.length} event{dayRows.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            {/* Timeline: continuous rail behind status dots */}
-            <div className="relative">
-              <div className="absolute bottom-3 left-[6px] top-3 w-px bg-hairline-strong" />
-              <ul>
-                {dayRows.map((row) => (
-                  <ActivityEvent key={row.id} row={row} />
-                ))}
-              </ul>
-            </div>
-          </section>
-        ))}
-      </div>
+      <ActivityDaybook days={days} streak={streak} />
     </main>
-  );
-}
-
-function ActivityEvent({ row }: { row: IngestLog }) {
-  const isInProgress =
-    row.status === "partial" &&
-    Date.now() - new Date(row.created_at).getTime() < RECENT_PARTIAL_WINDOW_MS &&
-    row.model === "pending";
-  const status = isInProgress ? "running" : row.status;
-
-  const errors = row.error
-    ? row.error.split("\n").map((l) => l.trim()).filter(Boolean)
-    : [];
-
-  const time = new Date(row.created_at).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-  const headings = parseLoggedHeadings(row.raw_input);
-  const summary = summarize(row, headings);
-
-  return (
-    <li className="relative pl-7">
-      <span className="absolute left-0 top-[7px]">
-        <StatusDot status={status} />
-      </span>
-      <details className="group border-b border-hairline">
-        <summary className="flex cursor-pointer list-none flex-col gap-1 py-3 pr-1 hover:bg-bg-soft hover:-mr-1 hover:pr-2">
-          <div className="flex items-center gap-3">
-            <span className="w-[60px] shrink-0 whitespace-nowrap font-mono text-[12px] text-ink-mid">
-              {time}
-            </span>
-            <span className="text-[13px] font-medium text-ink">{row.mode}</span>
-            <StatusBadge status={status} />
-            <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-soft">
-              {isInProgress ? "pending" : row.model}
-            </span>
-            <span className="shrink-0 text-ink-soft transition-transform group-open:rotate-90">
-              ›
-            </span>
-          </div>
-          <div className="pl-[72px] text-[13px] text-ink-mid">{summary}</div>
-        </summary>
-        <div className="space-y-3 pb-4 pl-[72px] pt-1">
-          {row.raw_input && (
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-mid">
-                Input
-              </div>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-hairline bg-bg-soft p-3 font-mono text-[11px] text-ink">
-                {row.raw_input}
-              </pre>
-            </div>
-          )}
-          {errors.length > 0 && (
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-red-deep">
-                Errors ({errors.length})
-              </div>
-              <ul className="space-y-1">
-                {errors.map((err, i) => (
-                  <li
-                    key={i}
-                    className="rounded border border-red-bg bg-red-bg/60 px-2.5 py-1.5 text-[11px] text-red-deep"
-                  >
-                    {err}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </details>
-    </li>
-  );
-}
-
-// Human one-liner for what the event did. Leads with the actual heading(s)
-// ingested when we can recover them — the interesting datum is "shim", not
-// "1 item".
-function summarize(row: IngestLog, headings: string[]): React.ReactNode {
-  const errorCount = row.error
-    ? row.error.split("\n").map((l) => l.trim()).filter(Boolean).length
-    : 0;
-
-  if (headings.length > 0) {
-    const shown = headings.slice(0, 2);
-    const rest = headings.length - shown.length;
-    return (
-      <span>
-        {shown.map((h, i) => (
-          <span key={i}>
-            {i > 0 && <span className="text-ink-soft">, </span>}
-            <span className="text-ink">“{h}”</span>
-          </span>
-        ))}
-        {rest > 0 && <span className="text-ink-soft"> +{rest} more</span>}
-        {errorCount > 0 && (
-          <span className="text-red-deep"> · {errorCount} error{errorCount === 1 ? "" : "s"}</span>
-        )}
-      </span>
-    );
-  }
-
-  // Fallback: no recoverable headings (e.g. pending bulk with no input yet)
-  const noun = row.parsed_count === 1 ? "item" : "items";
-  return (
-    <span>
-      {row.parsed_count} {noun}
-      {errorCount > 0 && (
-        <span className="text-red-deep"> · {errorCount} error{errorCount === 1 ? "" : "s"}</span>
-      )}
-    </span>
   );
 }
 
@@ -224,13 +250,11 @@ function summarize(row: IngestLog, headings: string[]): React.ReactNode {
 //   single / recategorize / regenerate → the bare heading
 //   bulk / begin                       → "1. heading" per line, or "# heading\nbody"
 //   cc-session                         → JSON array of headings
-// Recover a flat list of headings from any of them.
 function parseLoggedHeadings(raw: string | null): string[] {
   if (!raw) return [];
   const trimmed = raw.trim();
   if (!trimmed) return [];
 
-  // cc-session: JSON array
   if (trimmed.startsWith("[")) {
     try {
       const arr = JSON.parse(trimmed);
@@ -255,49 +279,6 @@ function parseLoggedHeadings(raw: string | null): string[] {
   if (numbered.length > 0) return numbered;
   if (markdown.length > 0) return markdown;
 
-  // Single-line / unstructured → treat the whole thing as one heading,
-  // but only if it's short enough to be a heading (guard against bodies).
   if (lines.length === 1 && trimmed.length <= 200) return [trimmed];
   return [];
-}
-
-function StatusDot({
-  status,
-}: {
-  status: "success" | "partial" | "failed" | "running";
-}) {
-  // Filled for terminal states, hollow ring for in-flight. A bg-colored
-  // ring keeps the rail from showing through the dot.
-  const base = "block size-3 rounded-full ring-4 ring-bg";
-  if (status === "success")
-    return <span className={cn(base, "bg-ok-ink")} />;
-  if (status === "failed") return <span className={cn(base, "bg-red")} />;
-  // partial / running → hollow amber ring
-  return (
-    <span className={cn("block size-3 rounded-full border-2 border-warn-ink bg-bg ring-4 ring-bg")} />
-  );
-}
-
-function StatusBadge({
-  status,
-}: {
-  status: "success" | "partial" | "failed" | "running";
-}) {
-  const styles = {
-    success: "bg-ok-bg text-ok-ink",
-    partial: "bg-warn-bg text-warn-ink",
-    failed: "bg-red-bg text-red-deep",
-    running: "bg-warn-bg text-warn-ink",
-  } as const;
-  const label = status === "running" ? "running" : status;
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
-        styles[status],
-      )}
-    >
-      {label}
-    </span>
-  );
 }
