@@ -20,11 +20,8 @@ export function WorkspaceNameEditor({
 
   if (!canEdit) {
     return (
-      <div>
-        <div className="text-[15px] font-medium text-ink">{initialName}</div>
-        <div className="mt-1 text-[11px] text-ink-soft">
-          You&apos;re a member of this workspace (read-only on name).
-        </div>
+      <div className="text-[11px] leading-relaxed text-ink-soft">
+        Only the owner can rename this workspace.
       </div>
     );
   }
@@ -52,24 +49,24 @@ export function WorkspaceNameEditor({
   }
 
   return (
-    <form onSubmit={save} className="flex items-center gap-2">
+    <form onSubmit={save}>
       <input
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
         disabled={pending}
         maxLength={80}
-        className="flex-1 rounded border border-hairline-strong bg-bg-input px-3 py-2 text-[14px] text-ink outline-none focus:border-ink disabled:opacity-50"
+        className="w-full rounded-[9px] bg-panel px-3.5 py-2.5 text-[13.5px] font-medium text-ink outline-none focus:ring-2 focus:ring-ink disabled:opacity-50"
       />
       <button
         type="submit"
         disabled={pending || !name.trim() || name.trim() === initialName}
-        className="rounded border border-hairline-strong px-3 py-2 text-[12px] text-ink-mid hover:bg-bg-soft hover:text-ink disabled:opacity-50"
+        className="mt-2 text-[12.5px] font-medium text-ink-mid hover:text-ink disabled:opacity-40"
       >
-        {pending ? "Saving…" : "Rename"}
+        {pending ? "Saving…" : "Rename →"}
       </button>
-      {msg && <span className="text-[11px] text-ok-ink">{msg}</span>}
-      {err && <span className="text-[11px] text-red-deep">{err}</span>}
+      {msg && <span className="ml-2 text-[11px] text-ok-ink">{msg}</span>}
+      {err && <span className="ml-2 text-[11px] text-red-deep">{err}</span>}
     </form>
   );
 }
