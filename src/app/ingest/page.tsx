@@ -8,17 +8,17 @@ export default async function IngestPage({
 }) {
   const { heading } = await searchParams;
   return (
-    <main className="mx-auto max-w-[820px] px-8 py-10">
-      <div className="mb-8 flex items-baseline justify-between">
+    <main className="mx-auto max-w-[760px] px-9 pb-[90px] pt-11">
+      <div className="flex items-baseline justify-between">
         <div>
           <h1>Ingest</h1>
           <p className="mt-1 text-[13px] text-ink-mid">
-            Paste a heading or a list. NOUS will categorize, define, and store
-            each one.
+            Paste anything — one heading, a list, or markdown. NOUS splits it
+            for you.
           </p>
         </div>
-        <Link href="/activity" className="text-[12px] text-ink-mid hover:text-red">
-          View activity log →
+        <Link href="/activity" className="text-[12px] font-medium text-red hover:underline">
+          activity log →
         </Link>
       </div>
       <IngestForm initialHeading={heading} />

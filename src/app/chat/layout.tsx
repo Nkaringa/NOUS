@@ -26,8 +26,8 @@ export default async function ChatLayout({
   const sessions = (data ?? []) as ChatSessionListItem[];
 
   return (
-    <div className="mx-auto max-w-[1100px] px-8 py-8">
-      <div className="grid gap-8 md:grid-cols-[240px_1fr]">
+    <div className="mx-auto max-w-[1240px] px-9 pt-9">
+      <div className="grid gap-8 md:grid-cols-[240px_minmax(0,1fr)] md:gap-14">
         <ChatSidebar sessions={sessions} />
         <div className="min-w-0">{children}</div>
       </div>
